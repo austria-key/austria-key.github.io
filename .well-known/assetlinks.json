@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ru.austria.key",
+      "sha256_cert_fingerprints": [
+        "70:6B:46:BB:02:2A:2C:95:C8:C6:6B:D2:54:53:D2:46:A1:97:02:B4:1A:9B:B8:F7:BF:B4:86:0D:18:86:A2:6E"
+      ]
+    }
+  }
+]
