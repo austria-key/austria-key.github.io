@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Добавить ключ — Австрия Ключ</title>
+  <style>
+    body { margin: 0; background: #fff; color: #202124; font: 17px/1.6 system-ui, sans-serif; }
+    main { max-width: 620px; margin: 48px auto; padding: 0 24px; }
+    h1 { font-size: 28px; line-height: 1.25; }
+    p { overflow-wrap: anywhere; }
+    button { min-height: 48px; max-width: 100%; padding: 12px 24px; background: #166438; color: #fff; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #166438; outline-offset: 4px; }
+    a { color: #0759b9; text-underline-offset: 3px; }
+    .secondary { margin-top: 32px; font-size: 15px; }
+    [hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Добавить ключ</h1>
+    <p id="status">Откройте QR-код доступа, выданный администратором.</p>
+    <button id="open" type="button" hidden>Открыть приложение</button>
+    <p id="notice" hidden>Ключ будет импортирован установленным приложением на этом телефоне. Первая активация выполняется только рядом с калиткой через Bluetooth. Эта страница не активирует доступ на сервере.</p>
+    <section class="secondary">
+      <p>Если приложение не установлено, получите у администратора действующую ссылку тестирования. На iPhone для допустимого возраста сначала установите <a href="https://apps.apple.com/ru/app/testflight/id899247664" rel="noreferrer">TestFlight</a>. Его условия не допускают пользователей младше 13 лет или эквивалентного местного минимального возраста.</p>
+      <p>Для Android нужен доступ к согласованному тестированию Google Play; установка TestFlight на Android не используется.</p>
+      <p><a href="/help.html" rel="noreferrer">Инструкция пользователя</a></p>
+    </section>
+    <noscript><p>Для передачи ключа приложению включите JavaScript или импортируйте исходный QR/JSON внутри приложения.</p></noscript>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const hash = location.hash;
+      const canonicalPage = location.protocol === 'https:' && location.host === 'austria-key.github.io' && location.pathname === '/activate/' && location.search === '';
+      history.replaceState(null, '', '/activate/');
+      const status = document.getElementById('status');
+      const button = document.getElementById('open');
+      const notice = document.getElementById('notice');
+      if (!hash) return;
+      try {
+        if (!canonicalPage || !/^#key=[A-Za-z0-9_-]+$/.test(hash) || hash.length > 12288) throw new Error();
+        const payload = hash.slice(5);
+        const raw = atob(payload.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - payload.length % 4) % 4));
+        if (raw.length > 8192 || btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '') !== payload) throw new Error();
+        const key = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Uint8Array.from(raw, value => value.charCodeAt(0))));
+        if (key.v !== 1 || key.type !== 'austria-key' || typeof key.key_id !== 'string' || !/^[a-f0-9]{32}$/.test(key.key_id)
+            || typeof key.gate_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(key.gate_id)
+            || typeof key.apartment !== 'string' || !/^[0-9]{1,5}(?:\/[0-9]{1,5})?$/.test(key.apartment)
+            || typeof key.activation_code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key.activation_code)
+            || typeof key.gate_public_key !== 'string' || !/^[A-Za-z0-9+/]{87}=$/.test(key.gate_public_key)) throw new Error();
+        const code = atob(key.activation_code.replace(/-/g, '+').replace(/_/g, '/') + '=');
+        const publicKey = atob(key.gate_public_key);
+        if (code.length !== 32 || publicKey.length !== 65 || publicKey.charCodeAt(0) !== 4
+            || btoa(publicKey) !== key.gate_public_key
+            || btoa(code).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '') !== key.activation_code) throw new Error();
+        status.textContent = 'Ключ доступа получен. Откройте приложение, чтобы сохранить его.';
+        button.hidden = false;
+        notice.hidden = false;
+        button.addEventListener('click', () => location.assign('austriakey://import#key=' + payload));
+      } catch (_) {
+        status.textContent = 'Ссылка доступа повреждена или не поддерживается. Получите новый QR-код у администратора.';
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "JPALC842B2.app.bluetoothrelay.ios",
+        "paths": ["/activate/*"]
+      }
+    ]
+  }
+}
