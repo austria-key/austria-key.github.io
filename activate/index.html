@@ -23,13 +23,13 @@
     <h1>Добавить ключ</h1>
     <p id="status">Откройте QR-код доступа, выданный администратором.</p>
     <button id="open" type="button" hidden>Открыть приложение</button>
-    <p id="notice" hidden>Ключ будет импортирован установленным приложением на этом телефоне. Первая активация выполняется только рядом с калиткой через Bluetooth. Эта страница не активирует доступ на сервере.</p>
+    <p id="notice" hidden>Если система не открыла импорт сама, откройте приложение и сканируйте исходный QR-код внутри него либо выберите изображение с QR или JSON-файл. Кнопка только запускает приложение и не передаёт ключ. Первая активация выполняется рядом с калиткой через Bluetooth; эта страница не активирует доступ на сервере.</p>
     <section class="secondary">
       <p>Если приложение не установлено, получите у администратора действующую ссылку тестирования. На iPhone для допустимого возраста сначала установите <a href="https://apps.apple.com/ru/app/testflight/id899247664" rel="noreferrer">TestFlight</a>. Его условия не допускают пользователей младше 13 лет или эквивалентного местного минимального возраста.</p>
       <p>Для Android нужен доступ к согласованному тестированию Google Play; установка TestFlight на Android не используется.</p>
       <p><a href="/help.html" rel="noreferrer">Инструкция пользователя</a></p>
     </section>
-    <noscript><p>Для передачи ключа приложению включите JavaScript или импортируйте исходный QR/JSON внутри приложения.</p></noscript>
+    <noscript><p>Откройте установленное приложение и импортируйте исходный QR, изображение или JSON внутри него.</p></noscript>
   </main>
   <script>
     (() => {
@@ -37,12 +37,12 @@
       const status = document.getElementById('status');
       const button = document.getElementById('open');
       const notice = document.getElementById('notice');
-      let activePayload = null;
+      let ready = false;
       function importLink() {
         const hash = location.hash;
         const canonicalPage = location.protocol === 'https:' && location.host === 'austria-key.github.io' && location.pathname === '/activate/' && location.search === '';
         history.replaceState(null, '', '/activate/');
-        activePayload = null;
+        ready = false;
         button.hidden = true;
         notice.hidden = true;
         status.textContent = 'Откройте QR-код доступа, выданный администратором.';
@@ -63,8 +63,8 @@
         if (code.length !== 32 || publicKey.length !== 65 || publicKey.charCodeAt(0) !== 4
             || btoa(publicKey) !== key.gate_public_key
             || btoa(code).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '') !== key.activation_code) throw new Error();
-        status.textContent = 'Ключ доступа получен. Откройте приложение, чтобы сохранить его.';
-        activePayload = payload;
+        status.textContent = 'Откройте приложение и сканируйте QR-код внутри него.';
+        ready = true;
         button.hidden = false;
         notice.hidden = false;
         } catch (_) {
@@ -72,7 +72,7 @@
         }
       }
       button.addEventListener('click', () => {
-        if (activePayload !== null) location.assign('austriakey://import#key=' + activePayload);
+        if (ready) location.assign('austriakey://home');
       });
       addEventListener('hashchange', importLink);
       importLink();
