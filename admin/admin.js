@@ -249,7 +249,9 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   function requireCredentials() { if (!credentials?.get || !credentials?.create) throw new ApiError("PASSKEY_VERIFICATION_FAILED"); }
   async function login() {
     requireCredentials(); message("Подтвердите вход на устройстве…");
-    const challenge = await client.request("auth/login-options", { body: {} });
+    const value = $("login-request-number").value;
+    const body = value ? { request_number: Number(value) } : {};
+    const challenge = await client.request("auth/login-options", { body });
     const generation = client.generation;
     const credential = await credentials.get({ publicKey: credentialOptions(challenge.options) });
     if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
