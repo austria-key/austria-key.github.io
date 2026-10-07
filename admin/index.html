@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src https://a.tlgrm.cx; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>Австрия Ключ: администратор</title>
+  <link rel="stylesheet" href="admin.css">
+  <script type="module" src="entry.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="assets/austria-logo.png" width="40" height="40" alt=""><div><h1>Австрия Ключ</h1><span>Администратор</span></div></div>
+    <div class="header-actions"><span id="identity" class="identity" hidden></span><a class="icon-button" href="help.html" target="_blank" rel="noopener noreferrer" title="Инструкция" aria-label="Инструкция"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg></a><button id="extra-passkey" class="icon-button" hidden title="Добавить Passkey" aria-label="Добавить Passkey"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="5"/><path d="m11.5 11.5 9-9M16 7l3 3M19 4l3 3"/></svg></button><button id="logout" class="icon-button" hidden title="Выйти" aria-label="Выйти"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></div>
+  </header>
+  <main>
+    <div id="message" class="message" role="status" aria-live="polite" hidden></div>
+    <section id="auth-view" class="auth-view">
+      <h2>Вход администратора</h2>
+      <p>Подтвердите вход с помощью одобренного Passkey на вашем устройстве.</p>
+      <div class="actions"><button id="login" class="primary" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="5"/><path d="m11.5 11.5 9-9M16 7l3 3M19 4l3 3"/></svg>Войти с Passkey</button><button id="show-register" disabled>Зарегистрировать Passkey</button><button id="retry-session" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg>Повторить соединение</button></div>
+    </section>
+    <section id="register-panel" hidden>
+      <div class="section-heading"><h2>Новый Passkey</h2><button id="close-register" class="icon-button" title="Закрыть" aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div>
+      <form id="register-form" class="form-grid">
+        <label>Имя администратора<input id="register-name" name="name" maxlength="80" autocomplete="name" required></label>
+        <label>Название устройства<input id="device-label" name="device_label" maxlength="80" placeholder="Например, рабочий телефон" autocomplete="off" required></label>
+        <div class="full"><button id="show-bootstrap" type="button" class="text-button">Первоначальная настройка владельца</button><label id="bootstrap-label" hidden>Одноразовый код настройки<input id="bootstrap" type="password" maxlength="256" autocomplete="off"></label></div>
+        <div class="actions full"><button id="register" class="primary" type="submit">Создать Passkey</button></div>
+      </form>
+      <p class="muted">После регистрации передайте владельцу номер запроса и отпечаток. До одобрения новый Passkey не даёт права выдавать QR.</p>
+      <div id="registration-result" class="registration-result" hidden></div>
+    </section>
+    <div id="admin-view" hidden>
+      <nav class="tabs" aria-label="Разделы"><button id="tab-keys" class="selected" aria-current="page">Выдачи QR</button><button id="tab-accounts" hidden>Администраторы</button></nav>
+      <div id="keys-view">
+        <section>
+          <h2>Выдать доступ</h2>
+          <form id="issue-form" class="issue-form">
+            <label>Квартира или домовладение<input id="apartment" name="apartment" inputmode="text" placeholder="60/2" pattern="[0-9]{1,5}(/[0-9]{1,5})?" maxlength="11" autocomplete="off" required></label>
+            <label class="quantity">Количество QR<input id="quantity" name="quantity" type="number" min="1" max="50" value="1" step="1" required></label>
+            <button id="issue" class="primary" type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Выпустить QR</button>
+          </form>
+          <div id="batch-result" class="batch-result" hidden></div>
+        </section>
+        <section>
+          <div class="section-heading"><h2>История выдач</h2><button id="refresh-history" class="icon-button" title="Обновить историю" aria-label="Обновить историю"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button></div>
+          <form id="filter-form" class="filters"><label>Квартира<input id="filter-apartment" placeholder="Все квартиры" maxlength="11" autocomplete="off"></label><label>Статус<select id="filter-status"><option value="">Все статусы</option><option value="pending">Не использован</option><option value="active">Активирован</option><option value="revoked">Отозван</option></select></label><button type="submit">Показать</button></form>
+          <p class="admin-notice">Отзыв обычно поступает на контроллер при синхронизации в течение 5 минут. Без связи ранее активированный доступ может действовать до 24 часов после последней успешной синхронизации. Неиспользованный отозванный QR активировать нельзя.</p>
+          <div class="table-wrap"><table><thead><tr><th>Дата выдачи</th><th>Квартира</th><th>QR №</th><th>В пакете</th><th>Статус</th><th>Действия</th></tr></thead><tbody id="history"></tbody></table></div>
+          <p id="history-empty" class="empty" hidden>Выдач нет.</p>
+        </section>
+      </div>
+      <div id="accounts-view" hidden>
+        <section>
+          <div class="section-heading"><h2>Запросы на регистрацию</h2><button id="refresh-accounts" class="icon-button" title="Обновить администраторов" aria-label="Обновить администраторов"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button></div>
+          <p class="muted">Сверьте номер запроса и отпечаток с человеком по независимому каналу. Одного указанного имени недостаточно.</p>
+          <div class="table-wrap"><table class="requests-table"><thead><tr><th>Запрос</th><th>Имя и устройство</th><th>Отпечаток</th><th>Назначить</th><th>Действия</th></tr></thead><tbody id="requests"></tbody></table></div>
+          <p id="requests-empty" class="empty" hidden>Ожидающих запросов нет.</p>
+        </section>
+        <section><h2>Администраторы и Passkey</h2><div id="principals" class="principal-list"></div><p id="principals-empty" class="empty" hidden>Администраторов нет.</p></section>
+      </div>
+    </div>
+  </main>
+  <footer>ТСН «Астрия» · <a href="mailto:info@kk-austria.info" target="_blank" rel="noopener noreferrer">info@kk-austria.info</a></footer>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div class="actions"><button value="cancel" autofocus>Отмена</button><button id="confirm-submit" value="confirm" class="danger">Подтвердить</button></div></form></dialog>
+  <noscript>Для работы панели включите JavaScript в браузере.</noscript>
+</body>
+</html>
