@@ -190,8 +190,27 @@ export class SessionClient {
   }
 }
 
-export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, saveBlob, timer, now, storage = null }) {
+export function requestNumberPreference(storage, apiBase) {
+  const key = `austria-key-admin-request:${new URL(apiBase).href}`;
+  return {
+    read() {
+      try { const value = storage?.getItem(key); const number = Number(value);
+        return value && /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(number) ? String(number) : "";
+      } catch { return ""; }
+    },
+    save(value) {
+      try { const number = Number(value);
+        if (Number.isSafeInteger(number) && number > 0) storage?.setItem(key, String(number));
+        else storage?.removeItem(key);
+      } catch { /* Remembering a public request number is optional. */ }
+    },
+  };
+}
+
+export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, saveBlob, timer, now, storage = null, preferenceStorage = null }) {
   const $ = (id) => doc.getElementById(id);
+  const requestPreference = requestNumberPreference(preferenceStorage, apiBase);
+  $("login-request-number").value = requestPreference.read();
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false;
   const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
@@ -257,6 +276,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
     const result = await client.request("auth/login-verify", { body: { challenge_id: challenge.challenge_id, credential: serializeCredential(credential) } });
     client.install(result); resetPrivate(); updateControls(); message("Вход выполнен.");
+    requestPreference.save(value);
     await loadHistory();
   }
   function showRegistration() {
@@ -277,6 +297,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
       if (prepared.generation !== client.generation) throw new ApiError("SESSION_CHANGED");
       const result = await client.request("auth/register-verify", { body: { challenge_id: prepared.challenge.challenge_id, credential: serializeCredential(credential) } });
       if (!Number.isInteger(result.request_number) || !/^[a-f0-9]{64}$/.test(result.fingerprint) || !["owner_ready", "pending"].includes(result.status)) throw new ApiError("INVALID_RESPONSE");
+      requestPreference.save(result.request_number); $("login-request-number").value = String(result.request_number);
       $("registration-result").replaceChildren(el("strong", `Запрос № ${result.request_number}`), el("p", `Устройство: ${body.device_label}`), el("p", "Отпечаток:"), el("p", result.fingerprint, "fingerprint"), el("p", result.status === "owner_ready" ? "Passkey владельца создан. Теперь нажмите «Войти с Passkey»." : "Передайте номер и полный отпечаток владельцу. После одобрения войдите с этим Passkey."));
       $("registration-result").hidden = false; message(result.status === "owner_ready" ? "Первоначальная настройка завершена." : "Запрос ожидает одобрения владельца.");
       return;

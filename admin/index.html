@@ -20,7 +20,7 @@
     <section id="auth-view" class="auth-view">
       <h2>Вход администратора</h2>
       <p>Подтвердите вход с помощью одобренного Passkey на вашем устройстве.</p>
-      <details><summary>Не предлагается отпечаток пальца?</summary><label for="login-request-number">Номер одобренного запроса регистрации</label><input id="login-request-number" type="number" min="1" step="1" inputmode="numeric"><p>Введите номер, полученный после создания Passkey, и нажмите «Войти с Passkey». Запрос должен быть одобрен владельцем.</p></details>
+      <details><summary>Не предлагается отпечаток пальца?</summary><label for="login-request-number">Номер одобренного запроса регистрации</label><input id="login-request-number" type="number" min="1" step="1" inputmode="numeric"><p>Введите номер, полученный после создания Passkey, и нажмите «Войти с Passkey». Запрос должен быть одобрен владельцем. После успешного входа номер запомнится в этом браузере.</p></details>
       <div class="actions"><button id="login" class="primary" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="5"/><path d="m11.5 11.5 9-9M16 7l3 3M19 4l3 3"/></svg>Войти с Passkey</button><button id="show-register" disabled>Зарегистрировать Passkey</button><button id="retry-session" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg>Повторить соединение</button></div>
     </section>
     <section id="register-panel" hidden>

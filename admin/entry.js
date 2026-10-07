@@ -5,6 +5,8 @@ if (window.self !== window.top) {
 } else {
   let storage = null;
   try { storage = window.sessionStorage; } catch { /* Browser storage may be disabled. */ }
-  const app = createAdminApp({ document, storage, apiBase: "https://a.tlgrm.cx/austria-key-v2/admin-access/" });
+  let preferenceStorage = null;
+  try { preferenceStorage = window.localStorage; } catch { /* The public request number can be entered manually. */ }
+  const app = createAdminApp({ document, storage, preferenceStorage, apiBase: "https://a.tlgrm.cx/austria-key-v2/admin-access/" });
   app.start();
 }
