@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "ru.austria.key",
       "sha256_cert_fingerprints": [
-        "70:6B:46:BB:02:2A:2C:95:C8:C6:6B:D2:54:53:D2:46:A1:97:02:B4:1A:9B:B8:F7:BF:B4:86:0D:18:86:A2:6E"
+        "70:6B:46:BB:02:2A:2C:95:C8:C6:6B:D2:54:53:D2:46:A1:97:02:B4:1A:9B:B8:F7:BF:B4:86:0D:18:86:A2:6E",
+        "C2:37:64:A0:05:68:86:AB:B7:FB:01:38:47:32:C3:20:9F:F5:11:DE:0C:18:9F:A0:FC:98:0E:41:38:AD:3F:94"
       ]
     }
   }
