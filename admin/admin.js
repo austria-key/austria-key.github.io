@@ -81,13 +81,14 @@ export class SessionClient {
   #session = null;
   #epoch = 0;
   #timer = null;
-  constructor({ apiBase, fetchImpl = globalThis.fetch.bind(globalThis), onExpired = () => {}, now = () => Date.now(), timer = globalThis }) {
+  constructor({ apiBase, fetchImpl = globalThis.fetch.bind(globalThis), onExpired = () => {}, now = () => Date.now(), timer = globalThis, storage = null }) {
     this.base = new URL(apiBase); this.fetchImpl = fetchImpl; this.onExpired = onExpired; this.now = now; this.timer = timer;
+    this.storage = storage; this.storageKey = `austria-key-admin-session:${this.base.href}`;
   }
   get generation() { return this.#epoch; }
   get state() { return { authenticated: this.#session?.authenticated === true, principal: this.#session?.principal ? { ...this.#session.principal } : null }; }
   get available() { return this.#session !== null; }
-  clear() { this.#epoch++; this.timer.clearTimeout(this.#timer); this.#timer = null; this.#session = null; }
+  clear() { this.#epoch++; this.timer.clearTimeout(this.#timer); this.#timer = null; this.#session = null; try { this.storage?.removeItem(this.storageKey); } catch { /* Storage may be disabled. */ } }
   install(value) {
     if (!value || typeof value.session_token !== "string" || value.session_token.length < 32 ||
         typeof value.csrf_token !== "string" || value.csrf_token.length < 32 ||
@@ -99,6 +100,7 @@ export class SessionClient {
     }
     this.clear();
     this.#session = { ...value, principal: value.authenticated ? { ...value.principal } : null };
+    if (value.authenticated) { try { this.storage?.setItem(this.storageKey, JSON.stringify(this.#session)); } catch { /* Login still works without persistence. */ } }
     const generation = this.#epoch;
     this.#timer = this.timer.setTimeout(() => {
       if (generation !== this.#epoch) return;
@@ -111,6 +113,26 @@ export class SessionClient {
     if (generation !== this.#epoch) throw new ApiError("SESSION_CHANGED");
     this.install(value); return this.state;
   }
+  async resume() {
+    let saved;
+    try { saved = JSON.parse(this.storage?.getItem(this.storageKey) ?? "null"); }
+    catch { this.clear(); }
+    if (!saved?.authenticated) return this.guest();
+    try { this.install(saved); }
+    catch { this.clear(); return this.guest(); }
+    // Never expose a stored role until the server has confirmed this session.
+    this.#session.authenticated = false; this.#session.principal = null;
+    const generation = this.#epoch;
+    try {
+      const state = await this.request("state", { notifyExpired: false });
+      this.install({ ...state, session_token: saved.session_token });
+      return this.state;
+    } catch (error) {
+      if (error.status === 401) return this.guest();
+      if (generation === this.#epoch) { this.timer.clearTimeout(this.#timer); this.#timer = null; this.#session = null; }
+      throw error;
+    }
+  }
   async #bounded(operation) {
     const controller = new AbortController();
     let deadline;
@@ -120,7 +142,7 @@ export class SessionClient {
     try { return await Promise.race([operation(controller.signal), timeout]); }
     finally { this.timer.clearTimeout(deadline); }
   }
-  async request(path, { body, anonymous = false, blob = false } = {}) {
+  async request(path, { body, anonymous = false, blob = false, notifyExpired = true } = {}) {
     const url = new URL(path, this.base);
     if (url.origin !== this.base.origin || !url.pathname.startsWith(this.base.pathname) || url.hash) throw new ApiError("INVALID_RESPONSE");
     const generation = this.#epoch;
@@ -149,7 +171,7 @@ export class SessionClient {
       if (signal.aborted) throw new ApiError("NETWORK_ERROR");
       if (generation !== this.#epoch) throw new ApiError("SESSION_CHANGED");
       const error = new ApiError(typeof code === "string" ? code : "REQUEST_FAILED", response.status);
-      if (response.status === 401 && !anonymous) { this.clear(); this.onExpired(error); }
+      if (response.status === 401 && !anonymous) { this.clear(); if (notifyExpired) this.onExpired(error); }
       throw error;
     }
     if (blob) {
@@ -168,10 +190,10 @@ export class SessionClient {
   }
 }
 
-export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, saveBlob, timer, now }) {
+export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, saveBlob, timer, now, storage = null }) {
   const $ = (id) => doc.getElementById(id);
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false;
-  const client = new SessionClient({ apiBase, fetchImpl, timer, now, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
+  const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
   function icon(name) {
     const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
@@ -186,6 +208,8 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (error?.name === "NotAllowedError" || error?.name === "AbortError") return "Подтверждение Passkey отменено или время ожидания истекло. Можно начать заново.";
     if (error?.code === "NETWORK_ERROR") return mutation ? "Ответ не получен. Проверьте историю перед повторным действием." : "Нет соединения с сервером. Повторите соединение.";
     if (error?.name === "SecurityError") return "Passkey недоступен на этом адресе. Откройте официальную панель администратора.";
+    if (error?.name === "NotSupportedError") return "На этом устройстве или в этом браузере недоступно создание такого Passkey. Попробуйте другой браузер с поддержкой Passkey или другое устройство. Пароль вместо Passkey не требуется.";
+    if (error?.name === "InvalidStateError") return "Этот ключ уже существует на устройстве. Попробуйте войти с Passkey или выбрать другой ключ.";
     return errorLabels[error?.code] ?? (error?.status === 429 ? "Слишком много запросов. Повторите позже." : "Не удалось выполнить действие. Обновите список или повторите вход.");
   }
   function message(text, error = false) { $("message").textContent = text; $("message").classList.toggle("error", error); $("message").hidden = !text; }
@@ -211,7 +235,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   async function connect(clearMessage = true) {
     if (destroyed) return;
     $("retry-session").hidden = true; if (clearMessage) message("Соединение…");
-    try { await client.guest(); if (clearMessage) message(""); }
+    try { await client.resume(); updateControls(); if (clearMessage) message(""); if (client.state.authenticated) await loadHistory(); }
     catch (error) { if (!destroyed) { message(errorText(error), true); $("retry-session").hidden = false; } }
     updateControls();
   }
