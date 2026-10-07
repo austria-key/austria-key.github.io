@@ -258,24 +258,33 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     await loadHistory();
   }
   function showRegistration() {
+    preparedRegistration = null;
     $("register-panel").hidden = false; $("registration-result").hidden = true; $("registration-result").replaceChildren();
     $("register-name").value = client.state.principal?.name ?? ""; $("register-name").focus();
   }
+  let preparedRegistration = null;
   async function register() {
     requireCredentials(); $("registration-result").hidden = true;
     const body = { name: $("register-name").value.trim(), device_label: $("device-label").value.trim() };
+    const prepared = preparedRegistration;
+    if (prepared && prepared.name === body.name && prepared.label === body.device_label && prepared.generation === client.generation && prepared.expires > Date.now()) {
+      preparedRegistration = null;
+      message("Подтвердите создание Passkey на устройстве…");
+      // A fresh button click keeps user activation available in mobile browsers.
+      const credential = await credentials.create({ publicKey: credentialOptions(prepared.challenge.options, true) });
+      if (prepared.generation !== client.generation) throw new ApiError("SESSION_CHANGED");
+      const result = await client.request("auth/register-verify", { body: { challenge_id: prepared.challenge.challenge_id, credential: serializeCredential(credential) } });
+      if (!Number.isInteger(result.request_number) || !/^[a-f0-9]{64}$/.test(result.fingerprint) || !["owner_ready", "pending"].includes(result.status)) throw new ApiError("INVALID_RESPONSE");
+      $("registration-result").replaceChildren(el("strong", `Запрос № ${result.request_number}`), el("p", `Устройство: ${body.device_label}`), el("p", "Отпечаток:"), el("p", result.fingerprint, "fingerprint"), el("p", result.status === "owner_ready" ? "Passkey владельца создан. Теперь нажмите «Войти с Passkey»." : "Передайте номер и полный отпечаток владельцу. После одобрения войдите с этим Passkey."));
+      $("registration-result").hidden = false; message(result.status === "owner_ready" ? "Первоначальная настройка завершена." : "Запрос ожидает одобрения владельца.");
+      return;
+    }
     if (!$("bootstrap-label").hidden && $("bootstrap").value) body.bootstrap = $("bootstrap").value;
     $("bootstrap").value = "";
     const challenge = await client.request("auth/register-options", { body });
     delete body.bootstrap;
-    const generation = client.generation;
-    message("Подтвердите создание Passkey на устройстве…");
-    const credential = await credentials.create({ publicKey: credentialOptions(challenge.options, true) });
-    if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
-    const result = await client.request("auth/register-verify", { body: { challenge_id: challenge.challenge_id, credential: serializeCredential(credential) } });
-    if (!Number.isInteger(result.request_number) || !/^[a-f0-9]{64}$/.test(result.fingerprint) || !["owner_ready", "pending"].includes(result.status)) throw new ApiError("INVALID_RESPONSE");
-    $("registration-result").replaceChildren(el("strong", `Запрос № ${result.request_number}`), el("p", `Устройство: ${body.device_label}`), el("p", "Отпечаток:"), el("p", result.fingerprint, "fingerprint"), el("p", result.status === "owner_ready" ? "Passkey владельца создан. Теперь нажмите «Войти с Passkey»." : "Передайте номер и полный отпечаток владельцу. После одобрения войдите с этим Passkey."));
-    $("registration-result").hidden = false; message(result.status === "owner_ready" ? "Первоначальная настройка завершена." : "Запрос ожидает одобрения владельца.");
+    preparedRegistration = { challenge, name: body.name, label: body.device_label, generation: client.generation, expires: Date.now() + 240000 };
+    message("Готово к подтверждению. Нажмите «Создать Passkey» ещё раз, чтобы открыть системное окно.");
   }
   async function confirm(title, text, label = "Подтвердить", danger = true) {
     if ($("confirm-dialog").open) return false;
