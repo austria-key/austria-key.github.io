@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Austria Key: Complete Reviewer Guide</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #202124; background: #fff; font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width: 960px; padding: 28px 24px 64px; margin: 0 auto; }
+    h1 { font-size: 28px; line-height: 1.25; margin: 0 0 16px; }
+    h2 { font-size: 22px; line-height: 1.35; margin: 36px 0 12px; scroll-margin-top: 16px; }
+    h3 { font-size: 18px; line-height: 1.4; margin: 24px 0 8px; }
+    p, li, td, th { overflow-wrap: anywhere; }
+    a { color: #1664c0; }
+    p { margin: 12px 0; }
+    li { margin: 6px 0; }
+    small, .subtle { color: #62656a; }
+    nav { padding: 16px 0; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }
+    nav ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); padding: 0 0 0 20px; gap: 4px 24px; margin: 0; }
+    .notice { padding: 12px 0 12px 16px; border-left: 4px solid #b32a24; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    td, th { border-bottom: 1px solid #ddd; padding: 10px; text-align: left; vertical-align: top; overflow-wrap: break-word; }
+    th { background: #f4f5f6; }
+    code { font-size: 0.92em; overflow-wrap: anywhere; }
+    figure { margin: 20px 0; }
+    figure img { width: min(100%, 420px); height: auto; display: block; }
+    figcaption { font-size: 14px; margin-top: 8px; }
+    footer { margin-top: 36px; border-top: 1px solid #ddd; padding-top: 16px; }
+    @media (max-width: 640px) { table { min-width: 640px; } }
+    @media (max-width: 480px) { main { padding: 20px 16px 40px; } td, th { padding: 8px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Austria Key: Complete Reviewer Guide</h1>
+  <p><strong>App name:</strong> <span lang="ru">Австрия Ключ</span> (Austria Key). <strong>Operator:</strong> TSN <span lang="ru">«Астрия»</span> (Astria). The app and operator names intentionally differ.</p>
+  <p><strong>Review candidates:</strong> iOS/iPadOS <strong>1.0.0 (11)</strong>, iOS/iPadOS 17 or later; Android <strong>1.0.0 (3)</strong>, Android 8.0 or later. Android package: <code>ru.austria.key</code>. iOS bundle: <code>app.bluetoothrelay.ios</code>.</p>
+  <p><small>Updated 7 October 2026. Instructions describe these candidates, not earlier test builds. The submitted apps have a Russian interface; this English guide translates the actual control labels. Store approval, tester availability and physical-device verification are separate matters.</small></p>
+  <p class="notice"><strong>Review without hardware is supported for interface, documents and credential import.</strong> Demo does not perform Bluetooth access. The public QR/JSON files below are deliberately unregistered import samples: they cannot activate or open a real gate. Actual opening additionally requires a nearby compatible controller and a separately issued operational review credential.</p>
+
+  <nav aria-label="Guide contents">
+    <ul>
+      <li><a href="#purpose">1. Purpose and access model</a></li>
+      <li><a href="#controls">2. Controls and labels</a></li>
+      <li><a href="#demo">3. Hardware-free demo</a></li>
+      <li><a href="#samples">4. Test QR and files</a></li>
+      <li><a href="#imports">5. Import test sequence</a></li>
+      <li><a href="#guards">6. Duplicate and replacement guards</a></li>
+      <li><a href="#permissions">7. Permissions</a></li>
+      <li><a href="#real-access">8. Actual gate opening</a></li>
+      <li><a href="#background">9. Optional background modes</a></li>
+      <li><a href="#widgets">10. Android widgets only</a></li>
+      <li><a href="#states">11. Status and error meanings</a></li>
+      <li><a href="#privacy">12. Local operation and data</a></li>
+      <li><a href="#evidence">13. Evidence and limitations</a></li>
+      <li><a href="#contact">14. Support</a></li>
+      <li><a href="#ru">Краткое резюме на русском</a></li>
+    </ul>
+  </nav>
+
+  <section id="purpose">
+    <h2>1. Purpose and access model</h2>
+    <p>Austria Key is a free local Bluetooth gate-access utility for users authorized by the operator of the Austria cottage complex. It is not limited to employees. Downloading the app, joining a test track or enabling Demo does not grant physical access. There are no purchases, subscriptions, advertisements, analytics, app login/password or separate app accounts.</p>
+    <ol>
+      <li>An administrator issues a ready-to-import access QR or JSON file for a property and gate. The user does not generate, display or return a request QR from the phone.</li>
+      <li>The user scans or imports the supplied credential. The app stores it locally and creates a protected phone signing identity.</li>
+      <li>For the first actual opening, the app exchanges authenticated messages with the nearby controller over Bluetooth. The controller uses <strong>its own Wi-Fi/HTTPS connection</strong> to bind the issued access to the first phone that successfully activates it.</li>
+      <li>After activation, subsequent openings use authenticated Bluetooth commands and the controller's synchronized local allowlist. A copied, already activated QR does not authorize a second phone.</li>
+    </ol>
+    <p>The app holds one credential at a time. Import and activation are different steps: a saved credential marked as awaiting activation is not evidence that a controller accepted it. Deleting an activated key or changing phone requires a new credential from the administrator; reinstalling or copying an old QR is not a supported way to transfer access.</p>
+  </section>
+
+  <section id="controls">
+    <h2>2. Controls and labels</h2>
+    <p>First launch on a phone without a saved key opens <span lang="ru">«Настройки»</span> (Settings). Once a key is saved, this initial screen closes. To return, use the three-line menu in the upper-right corner of the black main screen. On iOS close Settings with <span lang="ru">«Готово»</span> (Done); on Android use <span lang="ru">«Назад»</span> (Back).</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Actual Russian label</th><th>English meaning and function</th><th>Platform</th></tr></thead>
+        <tbody>
+          <tr><td lang="ru">Нажмите, чтобы открыть</td><td>Tap to open. Main circular button; initiates one manual operation. No long press is required.</td><td>Both; Android also retains this button text in Demo.</td></tr>
+          <tr><td lang="ru">Проверить демонстрацию</td><td>Check demonstration. Main button text when iOS Demo is enabled.</td><td>iOS</td></tr>
+          <tr><td lang="ru">Демонстрационный режим</td><td>Demonstration Mode. Hardware-free, visibly identified UI simulation; never sends an opening command.</td><td>Both</td></tr>
+          <tr><td lang="ru">Сканировать QR-код</td><td>Scan QR code using the camera inside the app.</td><td>Both</td></tr>
+          <tr><td lang="ru">Открыть изображение с QR / Открыть изображение QR-кода</td><td>Open a QR image with the system photo/image picker. The first label is iOS; the second is Android.</td><td>Both</td></tr>
+          <tr><td lang="ru">Импортировать файл ключа</td><td>Import key file using the system document picker; select the provided JSON file.</td><td>Both</td></tr>
+          <tr><td lang="ru">Удалить ключ</td><td>Delete key. Requires confirmation; destroys the locally stored access and phone identity. Do not use this on an unrelated real key.</td><td>Both</td></tr>
+          <tr><td lang="ru">Автоматическое открытие рядом</td><td>Automatic opening nearby. Optional background Bluetooth mode, not a screen-wake guarantee.</td><td>iOS</td></tr>
+          <tr><td lang="ru">Открытие замка по включению экрана</td><td>Open the lock when the screen turns on. Optional background service for the associated gate.</td><td>Android</td></tr>
+          <tr><td lang="ru">Подключить калитку / Калитка подключена</td><td>Connect gate / Gate connected. Opens or reflects the Android system Companion Device Manager association.</td><td>Android</td></tr>
+          <tr><td lang="ru">Добавить виджет открытия / Добавить ярлык приложения</td><td>Add opening widget / Add app shortcut. Different Android widgets; only the first requests an opening command.</td><td>Android only</td></tr>
+          <tr><td lang="ru">Политика конфиденциальности / Условия использования</td><td>Privacy policy / Terms. Bundled local documents; no website connection is needed to read them in the app.</td><td>Both</td></tr>
+          <tr><td lang="ru">Помощь / Версия</td><td>Help / Version. iOS has native Help and a version row. Android displays its version near the bottom of Settings.</td><td>As described</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>On iOS the saved-key section includes <span lang="ru">«Квартира»</span> (property/apartment), <span lang="ru">«Калитка»</span> (gate identifier) and <span lang="ru">«Состояние»</span> (activation state). Android displays the property and activation state in Settings. These are access-assignment details, not a location reading.</p>
+  </section>
+
+  <section id="demo">
+    <h2>3. Hardware-free demo</h2>
+    <ol>
+      <li>Open the app. On a fresh installation Settings opens automatically; otherwise use the upper-right menu.</li>
+      <li>Scroll to <span lang="ru">«Демонстрационный режим»</span> and switch it on. No login, credential, Bluetooth permission or hardware is required for this step.</li>
+      <li>Return to the main screen with Done (iOS) or Back (Android). The main screen visibly identifies Demo.</li>
+      <li>Tap the circular button once. iOS calls it <span lang="ru">«Проверить демонстрацию»</span>; Android retains <span lang="ru">«Нажмите, чтобы открыть»</span>.</li>
+      <li>After approximately one second, iOS displays <span lang="ru">«Демонстрация завершена. Команда калитке не отправлялась.»</span>; Android displays <span lang="ru">«Демонстрация завершена. Команда не отправлялась»</span>. Both explicitly mean that <strong>no hardware command was sent</strong>.</li>
+      <li>Return to Settings and inspect the local privacy policy and terms. On iOS also inspect native Help.</li>
+    </ol>
+    <p>Demo disables optional automatic access. It simulates only the visible main-button flow; it does not test Bluetooth discovery, controller authentication, registry activation, a relay pulse, or a physical gate. Android direct-opening widgets intentionally do not issue commands in Demo.</p>
+  </section>
+
+  <section id="samples">
+    <h2>4. Public test QR and files</h2>
+    <p>Two <strong>syntactically valid, non-operational</strong> samples are supplied. Sample A and Sample B use different access identifiers so that duplicate and replacement behavior can be checked. Both display synthetic property <code>0</code> and gate <code>austria-review-demo</code>. Their public controller-key value is a standard public test point, not a key belonging to an installed gate. Neither access identifier nor activation proof is registered for real opening.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Sample</th><th>PNG for camera/image import</th><th>JSON for document import</th><th>Intended test</th></tr></thead>
+        <tbody>
+          <tr><td>A</td><td><a href="demo-access.png">Open or save Sample A QR PNG</a></td><td><a href="demo-access.json" download="demo-access.json">Download Sample A JSON</a></td><td>Scan, selected image, JSON, repeat the same key.</td></tr>
+          <tr><td>B</td><td><a href="demo-access-file.png">Open or save Sample B QR PNG</a></td><td><a href="demo-access-file.json" download="demo-access-file.json">Download Sample B JSON</a></td><td>Distinct-key guard, then a second import after deleting only Sample A.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figure>
+      <a href="demo-access.png"><img src="demo-access.png" width="1092" height="1092" alt="Sample A: non-operational QR for testing credential import"></a>
+      <figcaption>Sample A. Display on another screen for camera scanning. This is not an operational gate credential.</figcaption>
+    </figure>
+    <figure>
+      <a href="demo-access-file.png"><img src="demo-access-file.png" width="1092" height="1092" alt="Sample B: a second non-operational QR with a distinct access identifier"></a>
+      <figcaption>Sample B. Use for the different-key guard or after removing only Sample A.</figcaption>
+    </figure>
+    <p>To save JSON on a phone, use the browser's download or share/save-to-Files action if it displays the text instead of downloading. Keep the <code>.json</code> extension. Save the PNG to Photos or a local document location for the selected-image test. Files stored only in a cloud provider may need the provider's internet connection to become locally available; downloading them is a browser/OS action, not a network request by Austria Key.</p>
+    <p>The QR contains an HTTPS import link with the credential in its <code>#key=</code> fragment. A supported, verified app link can open the installed app from the normal phone camera and import locally. If the camera opens a browser instead, the fallback button only launches the app without forwarding the credential: scan the <strong>original QR inside the app</strong> or choose its PNG/JSON. A failed app-link association must not be reported as a failed in-app QR or file import.</p>
+  </section>
+
+  <section id="imports">
+    <h2>5. Import test sequence</h2>
+    <p class="notice"><strong>Use an empty review installation, not an operational user's phone.</strong> If Settings shows an unrelated real credential, do not delete or replace it. Use a separate device instead. Before any main-button check after an import, return to Settings and ensure Demo is on. <strong>iOS turns Demo off when it accepts a new credential.</strong> Android retains the existing Demo setting, so explicitly checking it is still recommended.</p>
+    <h3>A. In-app camera scan</h3>
+    <ol>
+      <li>With no saved credential, open Settings and tap <span lang="ru">«Сканировать QR-код»</span>. Allow Camera for this action.</li>
+      <li>Display Sample A on a different screen, then scan it. Do not scan both samples in the same camera frame.</li>
+      <li>Expected: the app saves the sample and returns to the main screen. Reopen Settings: property is <code>0</code>, with an awaiting-first-opening/activation state. <strong>Import does not send a gate-opening command.</strong></li>
+      <li>Enable Demo again before testing the main button. Its expected result remains “command was not sent.”</li>
+    </ol>
+    <h3>B. Selected QR image</h3>
+    <ol>
+      <li>Delete <strong>only Sample A</strong> using <span lang="ru">«Удалить ключ»</span> and confirm. This makes iOS import controls visible again.</li>
+      <li>Choose <span lang="ru">«Открыть изображение с QR»</span> on iOS or <span lang="ru">«Открыть изображение QR-кода»</span> on Android.</li>
+      <li>Select the locally saved <code>demo-access.png</code>. The system grants access to the selected image, not unrestricted access to the photo library.</li>
+      <li>Expected: the same Sample A is saved. Reopen Settings, verify property <code>0</code> and awaiting activation, then enable Demo before any main-button test.</li>
+    </ol>
+    <h3>C. JSON document import</h3>
+    <ol>
+      <li>Delete only the currently saved public sample.</li>
+      <li>Tap <span lang="ru">«Импортировать файл ключа»</span> and choose the locally saved <code>demo-access.json</code> from Files/the system document picker.</li>
+      <li>Expected: Sample A is saved without Camera permission. Verify Settings; then restore Demo for hardware-free use.</li>
+      <li>After finishing Sample A and the guards below, delete only Sample A and import <code>demo-access-file.json</code>. Expected: Sample B is accepted as a different, still non-operational credential.</li>
+    </ol>
+    <h3>D. Invalid input and safe cleanup</h3>
+    <p>On an empty review installation, import a small local text/JSON file containing <code>{}</code>, or scan an unrelated QR. Expected: an error and no valid saved access. No command is sent. To finish, remove only the public sample and leave Demo enabled, or leave the app empty. Do not expect the samples to reach Activated status or produce a real controller acknowledgment.</p>
+  </section>
+
+  <section id="guards">
+    <h2>6. Duplicate and replacement guards</h2>
+    <p><strong>Repeat Sample A:</strong> once A is saved, deliver the same QR import link again (or use the Android import controls, which remain visible). iOS keeps its existing credential and identity; Android shows <span lang="ru">«Этот ключ уже добавлен»</span> (“This key is already added”). A duplicate is not a new activation and must not replace an activated receipt with an unactivated copy.</p>
+    <p>On iOS, camera/photo/file import controls are hidden while a key is saved. To test the saved-key link guard, scan the sample with the normal camera and follow its verified app link. If the OS opens the browser fallback instead, it does not deliver a new credential; that route cannot by itself prove the guard. The ordinary file-import paths can still be tested after removing only the public sample.</p>
+    <p><strong>Attempt B while A is saved:</strong> iOS refuses to replace a different existing key and asks the reviewer to check Settings. Android displays <span lang="ru">«Заменить ключ?»</span> (“Replace key?”); choose <span lang="ru">«Отмена»</span> (“Cancel”) to verify that A remains saved. Android intentionally allows a replacement only after explicit confirmation. This is different from the iOS guard and is not an automatic overwrite.</p>
+    <p>For the normal second-sample test, use Delete key to remove <strong>only public Sample A</strong>, then import B into the empty app. Never use Replace or Delete on an unrelated operational credential. Deleting local access stops automatic opening; it does not by itself delete the operator's server record.</p>
+  </section>
+
+  <section id="permissions">
+    <h2>7. Permissions</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Permission/system requirement</th><th>When and why</th><th>What is not done</th></tr></thead>
+        <tbody>
+          <tr><td>iOS Bluetooth</td><td>Requested for real nearby controller discovery, connection and authenticated access. Demo needs no Bluetooth authorization.</td><td>No iOS location permission or GPS readings.</td></tr>
+          <tr><td>Android 12+ Nearby devices / Bluetooth connect</td><td>Requested when connecting to or associating the gate. Android 8–11 use their legacy Bluetooth permissions.</td><td>The app declares no precise/background location or Bluetooth scan permission.</td></tr>
+          <tr><td>Android Companion Device Manager</td><td>The system scans/selects a compatible Bluetooth device for association. Choose the supplied review controller, not an arbitrary Bluetooth accessory.</td><td>System association alone does not authenticate an access credential or grant a gate opening.</td></tr>
+          <tr><td>Android system Location setting, on some OS/device versions</td><td>The Android system may require its Location service switch to be enabled for its Bluetooth device chooser. Follow the OS prompt if present.</td><td>The app does not receive location permission, coordinates or movement history through this requirement.</td></tr>
+          <tr><td>Camera</td><td>Requested only for in-app camera scanning. Denying it leaves image and JSON import available.</td><td>No video recording or upload by the app.</td></tr>
+          <tr><td>Selected image/local file</td><td>The system picker grants access to the chosen item. Ensure the item has been downloaded locally before an offline test.</td><td>No broad photo-library permission or file upload.</td></tr>
+          <tr><td>Android 13+ Notifications</td><td>Requested when optional background operation is enabled. Shows a service-status notification; direct-widget operation may have a temporary service notification.</td><td>Not an advertising push, and not periodic push traffic to keep the app alive.</td></tr>
+          <tr><td>Android connected-device foreground service</td><td>The opt-in background service stays visible while enabled. A widget command uses a separate short-lived connected-device service.</td><td>No hidden perpetual service when the background option is off.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>If Android notification permission is denied, the OS may show the running foreground service in its active-app/task interface instead of the notification drawer. For a clear background-service review, grant notifications. Missing Bluetooth permission, disabled Bluetooth or a cancelled association prevents real access, but does not remove an already imported credential.</p>
+    <p>Android requires a device with Bluetooth LE and working Companion Device Manager support for real opening. If the manufacturer omits that system capability, the app reports that system association is unavailable; Demo and local import do not substitute for it.</p>
+  </section>
+
+  <section id="real-access">
+    <h2>8. Actual gate opening</h2>
+    <p><strong>Operational review access is separate from these public samples.</strong> Any additional credential-supply instructions are provided privately through the store review console. This page does not publish a user's QR, property number, activation code, private key or review-portal password. It does not claim that a portal URL or an operational key has already been delivered. If no operational review access was supplied, contact the developer before attempting the hardware test.</p>
+    <ol>
+      <li>Use a supported physical phone and a nearby compatible controller on a safe test stand. Import the individually issued operational review QR/JSON into an empty app, not one of the public samples.</li>
+      <li>Leave Demo and optional automatic access off. Enable Bluetooth and allow the required permission.</li>
+      <li>On Android select <span lang="ru">«Подключить калитку»</span> in Settings, confirm the supplied controller in the OS chooser and verify <span lang="ru">«Калитка подключена»</span>. The first manual opening can also invoke this association flow.</li>
+      <li>For first activation, the controller must have working Wi-Fi/server access and a valid trusted clock. The <strong>phone does not make this server request</strong>. First activation can take longer than later openings.</li>
+      <li>Return to the main screen and tap the circular button <strong>once</strong>. It is disabled while the operation is pending; wait for its final status rather than repeatedly tapping.</li>
+      <li>The app authenticates the controller's challenge and result; the controller validates the phone's proof and assigned access before producing an opening pulse.</li>
+      <li>On a valid signed confirmation, iOS reports <span lang="ru">«Команда открытия выполнена контроллером.»</span>; Android reports <span lang="ru">«Команда открытия подтверждена»</span>. The stored access changes to Activated after successful first activation.</li>
+      <li>Repeat one manual opening to inspect an already activated credential. Do not copy the first QR to another phone and assume it is reusable: the activated access is bound to one phone.</li>
+    </ol>
+    <p>A success status confirms the controller's authenticated software acknowledgment of the opening command/control pulse. <strong>The app has no sensor for physical gate position, relay-contact movement, obstacles or a person passing through.</strong> A defective relay, wiring or gate mechanism may therefore remain undetected even after a software acknowledgment.</p>
+    <p>The controller can use its synchronized authorization cache for up to 24 hours after a valid synchronization. First activation requires its server connection; revocation reaches the controller after synchronization. Stale authorization data or an untrusted clock after reboot fails closed. A phone without internet may still open an already authorized nearby gate, subject to these controller conditions.</p>
+  </section>
+
+  <section id="background">
+    <h2>9. Optional background modes</h2>
+    <h3>iOS: Automatic opening nearby</h3>
+    <p>First verify a real manual opening. In Settings switch on <span lang="ru">«Автоматическое открытие рядом»</span>, then allow the app to move into the background and approach the assigned controller. iOS background Bluetooth events may allow a brief authenticated opening attempt when proximity conditions are met. It is an opt-in automatic-access feature; leave it off on an unsafe test stand.</p>
+    <p><strong>Turning on the iPhone screen is not an API that guarantees app execution or gate opening.</strong> Bluetooth scheduling, radio conditions, battery policy and forced termination affect behavior. After force-quitting, reopen the app before expecting background access. Disabling the option or deleting the key stops this app's automatic-access behavior. There is no iOS widget in build 11 and no claim that a background push keeps this app alive.</p>
+    <h3>Android: Open the lock when the screen turns on</h3>
+    <ol>
+      <li>Verify ordinary opening using an activated operational credential and the system-associated controller. Leave Demo off.</li>
+      <li>Enable <span lang="ru">«Открытие замка по включению экрана»</span>. Complete association/Nearby devices permission if prompted; allow Notifications on Android 13+.</li>
+      <li>Expected persistent service status: title <span lang="ru">«Австрия Ключ»</span>, text <span lang="ru">«Открытие по включению экрана включено»</span>. This indicates the service is enabled, not that a gate is currently open.</li>
+      <li>Move the app to the background, turn the screen off, wait, then turn it on near the associated test controller. The service attempts authenticated access only when its checks allow it. It checks Bluetooth signal strength; this is not a GPS or distance measurement.</li>
+      <li>Wait at least <strong>60 seconds between automatic attempts</strong>. A cooldown suppresses repeated screen-on events; it is not a mandatory delay for the main manual button.</li>
+      <li>Switch the option off in Settings. The background service stops. Demo or key deletion also stops it. OS force-stop requires opening the app again; manufacturer battery controls may restrict it.</li>
+    </ol>
+    <p>For the “off” check, keep the direct-opening widget unused and return to Settings to disable the background option before a screen-on test. A widget-triggered short-lived notification is a separate function and must not be mistaken for the persistent opt-in background service. No fake or simulated foreground-service video is provided.</p>
+  </section>
+
+  <section id="widgets">
+    <h2>10. Android widgets only</h2>
+    <p><strong>iOS build 11 contains no widgets, widget extension or widget instructions.</strong> The following section applies only to Android build 3.</p>
+    <ol>
+      <li>In Settings choose <span lang="ru">«Добавить ярлык приложения»</span> to add the launcher. Tapping this widget opens the app only; it intentionally does not send an opening command.</li>
+      <li>Choose <span lang="ru">«Добавить виджет открытия»</span> for direct opening. If the launcher does not support the pinning request, use its normal widget list to add an Austria Key widget.</li>
+      <li>For actual opening, first import operational access, complete the controller association and allow Bluetooth in the main app. Leave Demo off and stand near the assigned controller.</li>
+      <li>Tap the direct-opening widget. If the phone is locked, complete the system's owner-unlock confirmation. Cancelling authentication does not send a command. The app does not bypass the phone lock.</li>
+      <li>A short-lived connected-device service sends one authenticated command; the widget/service status reflects progress or error. On older Android versions a temporary execution screen may remain until completion. The operation is distinct from the persistent screen-on service.</li>
+    </ol>
+    <p>Home-screen widgets are the fallback. Placement on the lock screen depends on the Android version and manufacturer's launcher. Neither build claims universal lock-screen placement. In Demo, the direct-opening widget reports that no command was sent; it does not simulate relay success. Missing access, Bluetooth, system association or permissions leads to an explanatory message, not a successful opening.</p>
+  </section>
+
+  <section id="states">
+    <h2>11. Status and error meanings</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Displayed state / example label</th><th>Meaning and expected response</th></tr></thead>
+        <tbody>
+          <tr><td lang="ru">Демонстрация завершена. Команда не отправлялась</td><td>UI simulation only. No hardware command or activation took place.</td></tr>
+          <tr><td lang="ru">Ожидает первого открытия / Ожидает первой активации</td><td>The credential is imported locally but has not completed a real first opening. This is expected for both public samples.</td></tr>
+          <tr><td lang="ru">Поиск калитки… / Подключение к калитке…</td><td>Discovery/connection is in progress. Android normally connects to its associated controller; iOS may scan or try a known authenticated controller.</td></tr>
+          <tr><td lang="ru">Проверка доступа…</td><td>Controller challenge and authorized access are being checked. It is not a successful opening.</td></tr>
+          <tr><td lang="ru">Активация доступа через контроллер…</td><td>First-phone binding is in progress through the controller. Its own server connection is required.</td></tr>
+          <tr><td lang="ru">Отправка команды… / Ожидание подтверждения…</td><td>The request is being sent or a verified controller result is awaited. Do not infer physical opening from these intermediate states.</td></tr>
+          <tr><td lang="ru">Команда открытия выполнена контроллером. / Команда открытия подтверждена</td><td>An authentic successful controller result was accepted. It confirms the command/control pulse, not sensed physical gate position.</td></tr>
+          <tr><td lang="ru">Включите Bluetooth / Разрешите Bluetooth / Разрешите доступ к устройствам поблизости</td><td>The radio or system permission blocks connection. Enable it in system settings; importing a credential alone does not grant permission.</td></tr>
+          <tr><td lang="ru">Подключите калитку через системный выбор в настройках приложения</td><td>Android's correct system association is missing. Complete it with the supplied controller.</td></tr>
+          <tr><td lang="ru">Калитка не найдена / Калитка не ответила / Соединение прервано</td><td>No valid completion was obtained. Check controller power/readiness, Bluetooth, association, compatibility and radio conditions. Wording about moving closer is not proof that distance caused the failure.</td></tr>
+          <tr><td lang="ru">Подлинность ответа калитки не подтверждена / Не удалось подтвердить контроллер калитки</td><td>Controller authentication failed. No success is accepted. Do not bypass signature checks; verify the issued credential matches the test controller.</td></tr>
+          <tr><td lang="ru">Этот QR уже активирован другим телефоном / Ключ уже привязан к другому телефону</td><td>One-phone binding blocked reactivation on another identity. Obtain newly issued access; repeated public import samples cannot test actual server binding.</td></tr>
+          <tr><td lang="ru">Для первой активации контроллеру нужна связь с сервером</td><td>Controller-side network/trusted-clock requirements are unmet. Restore its Wi-Fi/server readiness; phone internet is not the activation path.</td></tr>
+          <tr><td lang="ru">Доступ не зарегистрирован или отозван / Ключ отозван</td><td>Access is unknown or revoked. Contact the operator. Both public samples are deliberately unregistered.</td></tr>
+          <tr><td lang="ru">Время проверки истекло / Запрос истёк</td><td>A time-bound request expired. Wait for the previous attempt to finish and make one new attempt.</td></tr>
+          <tr><td lang="ru">Не удалось открыть файл / Некорректный QR-код</td><td>Unreadable, unsupported or malformed import. Select one clear QR image or the provided locally downloaded JSON.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <h2>12. Local operation and data</h2>
+    <p>The mobile app makes no internet requests, reads no GPS coordinates and has no ads, analytics or tracking SDK. Android's app manifest contains no <code>INTERNET</code>, location or Bluetooth scan permission. It uses system association rather than app-level background location. Import recognition and command signing happen locally.</p>
+    <p>The phone's non-exportable signing key remains in protected device-only storage (Secure Enclave/Keychain on iOS and Android Keystore on Android). The controller authenticates the phone and the app verifies the controller. Signed fresh challenges protect commands against reuse; this guide does not claim payload confidentiality or that a bare Bluetooth connection is sufficient authorization.</p>
+    <p>The operator registry links assigned access, phone public key, property/gate and issuance/revocation state for authorization. The private phone key does not enter the registry. The controller, not the mobile app, exchanges registry information over its own network. Deleting the app's local key is distinct from revoking access or removing the operator's record; contact the operator for the latter.</p>
+    <p>Browser downloads, app-link fallback pages, cloud-file providers and store services are separate network actions. The Google Play-distributed Android build has Google Play automatic source-of-install protection enabled; Play services may occasionally need internet for their own checks or offer the official store version after an unofficial installation. This does not give the app an operator-server connection, and it does not authorize physical access. It is not an iOS behavior.</p>
+    <p>Access service is intended for users aged 9 and older. For minors, access issuance and personal-data requests are handled by the parent/legal representative and operator. The app is not an Apple Kids Category product and has no automated age/parental-consent flow. TestFlight's separate age restrictions are not overridden by the service's minimum age.</p>
+    <p>Public documents: <a href="../privacy.html">Privacy policy (Russian)</a>, <a href="../terms.html">Terms (Russian)</a>, <a href="../help.html">User help (Russian)</a>. Privacy and terms are also bundled in the apps for offline reading.</p>
+  </section>
+
+  <section id="evidence">
+    <h2>13. Evidence and limitations</h2>
+    <p><strong>Apple:</strong> the private review attachment <code>austria-key-manual-gate-demonstration.mp4</code> shows a physical iPhone, ordinary button presses and the compatible controller/isolated relay. It is an earlier recording supplied during build 8 testing, not a physical test of build 11. The ordinary BLE implementation is unchanged; iOS widgets were removed. No simulator or Mac test is presented as physical iPhone verification.</p>
+    <p><strong>Android:</strong> the following owner-supplied recordings show a physical Android device. They are documentation of the recorded scenarios, not evidence that the app was installed through Google Play.</p>
+    <ul>
+      <li><a href="https://austria-key.github.io/review/android-services-9f6c3d6a/android-background-inspected.mp4">Android background-mode demonstration</a>: the screen-on setting is enabled and the persistent service notification is shown. This clip does not document disabling the option or a direct-widget command.</li>
+      <li><a href="https://austria-key.github.io/review/android-services-9f6c3d6a/android-manual-inspected.mp4">Android ordinary-button demonstration</a>: three manual commands receive confirmation. This is not foreground-service or widget proof.</li>
+    </ul>
+    <p>A promotional image on a manufacturer's stock lock-screen wallpaper, if visible in a recording, is device-system wallpaper, not advertising placed by Austria Key. The app itself has no advertising.</p>
+    <p>Import formats and public QR images have been checked against the production parser. iOS build 11 Simulator regression checks cover ordinary Demo, offline documents, cold/warm import links and native Help without iOS widget instructions, plus protected-storage unit tests. These checks do not validate radio timing, controller actuation or an entire physical-phone background workflow. Android widget support is implemented separately; the ordinary-button and background clips above do not claim to demonstrate it.</p>
+  </section>
+
+  <section id="contact">
+    <h2>14. Support</h2>
+    <p>Operator and review support: TSN <span lang="ru">«Астрия»</span>. Email: <a href="mailto:info@kk-austria.info">info@kk-austria.info</a>.</p>
+    <p>For an unresolved hardware-access check, identify the platform, app version/build, OS, last visible status and whether the test uses a public import sample or operational review access. Do not send a private key, an operational QR/JSON, or another user's property details in public feedback. Review-only access information belongs in the private store-review channel.</p>
+  </section>
+
+  <section id="ru" lang="ru">
+    <h2>Краткое резюме на русском</h2>
+    <p>Инструкция выше полностью описывает версии iOS 1.0.0 (11) и Android 1.0.0 (3) для ревьюера. Само приложение работает локально: импортирует готовый ключ, связывается с калиткой по Bluetooth и не обращается в интернет. Связь с реестром и первая привязка доступа выполняются отдельным контроллером через его Wi-Fi. Пользователь ничего не показывает администратору с телефона.</p>
+    <p>Для проверки без оборудования включите в настройках «Демонстрационный режим». На iOS кнопка станет «Проверить демонстрацию», на Android останется «Нажмите, чтобы открыть». Итоговое сообщение явно сообщает, что команда не отправлялась. Публичные QR и JSON A/B на этой странице позволяют проверить только импорт: они не зарегистрированы для реального открытия.</p>
+    <p>Проверяйте образцы в пустом приложении. После импорта верните Demo в положение «включено»: на iOS новый импорт выключает его автоматически. Для следующего способа импорта удаляйте только сохранённый публичный образец, никогда не удаляйте реальный ключ пользователя. Повтор A не заменяет доступ. При B поверх A iOS отказывает, Android запрашивает подтверждение замены; для проверки сохранности выберите «Отмена», затем отдельно удалите только A и импортируйте B.</p>
+    <p>В iOS 11 виджетов нет. В Android 3 ярлык только открывает приложение, виджет открытия отправляет команду с системной проверкой владельца заблокированного телефона. Фоновый режим включается отдельно: iOS зависит от событий Bluetooth и не гарантирует открытие по включению экрана; Android использует постоянное уведомление и паузу не менее 60 секунд между автоматическими попытками. Подтверждение команды означает ответ контроллера, а не измерение положения калитки.</p>
+    <p>Настоящая проверка требует выданного рабочего доступа и совместимого контроллера рядом. Рабочие тестовые QR и сведения доступа передаются ревьюеру приватно, не через эту публичную страницу. Поддержка: <a href="mailto:info@kk-austria.info">info@kk-austria.info</a>.</p>
+  </section>
+
+  <footer><p><small>This page has no analytics, third-party fonts or tracking scripts. The public samples are for import testing only; they do not provide operational gate access.</small></p></footer>
+</main>
+</body>
+</html>
