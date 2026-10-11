@@ -439,6 +439,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (sequence !== historySequence || !client.state.authenticated) return;
     if (!Array.isArray(result.keys)) throw new ApiError("INVALID_RESPONSE");
     $("history").replaceChildren(); $("history-empty").hidden = result.keys.length !== 0;
+    const shownBatches = new Set();
     for (const key of result.keys) {
       if (typeof key.key_id !== "string" || typeof key.apartment !== "string" || !Number.isInteger(key.apartment_number) || !labels[key.status]) throw new ApiError("INVALID_RESPONSE");
       const row = el("tr"); row.dataset.ordinal = String(key.apartment_number);
@@ -448,6 +449,10 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
       if (key.download_available) {
         actions.append(iconButton("view", `Показать QR ${key.apartment} № ${key.apartment_number}`, () => run(() => showKey(key))));
         actions.append(iconButton("download", `Скачать QR ${key.apartment} № ${key.apartment_number}`, () => run(() => download(`key/${encodeURIComponent(key.key_id)}/access.png`, `austria-key-${key.apartment.replaceAll("/", "-")}-${key.apartment_number}.png`))));
+        if (key.quantity > 1 && !shownBatches.has(key.batch_id)) {
+          shownBatches.add(key.batch_id);
+          actions.append(iconButton("share", `Показать пакет QR ${key.apartment} № ${key.apartment_number}`, () => run(() => showBatch(key.batch_id, key.apartment))));
+        }
       }
       if (key.status !== "revoked") actions.append(iconButton("revoke", `Отозвать QR ${key.apartment} № ${key.apartment_number}`, async () => {
         if (busy || !await confirm("Отозвать доступ?", `Квартира ${key.apartment}, QR № ${key.apartment_number}.\nОтзыв нельзя отменить. Контроллер обычно получает его в течение 5 минут; без связи ранее активированный доступ может действовать до 24 часов после последней синхронизации.`, "Отозвать")) return;
@@ -466,17 +471,23 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const result = await client.request("issue", { body: { apartment, quantity } });
     if (result.quantity !== quantity || typeof result.batch_id !== "string") throw new ApiError("INVALID_RESPONSE");
     message("QR выпущены. Подготовка файлов…");
+    await showBatch(result.batch_id, apartment, quantity); await loadHistory();
+  }
+  async function showBatch(batchId, apartment, expectedQuantity = null) {
+    message("Подготовка файлов…");
     const generation = client.generation;
     const history = await client.request(`history?apartment=${encodeURIComponent(apartment)}`);
     if (!Array.isArray(history.keys)) throw new ApiError("INVALID_RESPONSE");
-    const keys = history.keys.filter((key) => key.batch_id === result.batch_id).sort((a, b) => a.apartment_number - b.apartment_number);
-    if (keys.length !== quantity || keys.some((key) => !key.download_available || typeof key.key_id !== "string" || key.apartment !== apartment || !Number.isInteger(key.apartment_number))) throw new ApiError("INVALID_RESPONSE");
+    const keys = history.keys.filter((key) => key.batch_id === batchId && key.download_available && key.status !== "revoked").sort((a, b) => a.apartment_number - b.apartment_number);
+    const quantity = keys.length;
+    if (!quantity) throw new ApiError("DOWNLOAD_UNAVAILABLE");
+    if ((expectedQuantity !== null && quantity !== expectedQuantity) || keys.some((key) => typeof key.key_id !== "string" || key.apartment !== apartment || !Number.isInteger(key.apartment_number))) throw new ApiError("INVALID_RESPONSE");
     const files = [];
     for (const key of keys) files.push(await fileFor(`key/${encodeURIComponent(key.key_id)}/access.png`, `austria-key-${apartment.replaceAll("/", "-")}-${key.apartment_number}.png`));
     const png = quantity === 1 ? files[0] : new File([await qrCollage(files, doc)], `austria-key-${apartment.replaceAll("/", "-")}-collage-${keys[0].apartment_number}-${keys[keys.length - 1].apartment_number}.png`, { type: "image/png" });
-    const archive = quantity === 1 ? null : await fileFor(`batch/${encodeURIComponent(result.batch_id)}/access.zip`, "austria-key-qr.zip");
+    const archive = quantity === 1 ? null : await fileFor(`batch/${encodeURIComponent(batchId)}/access.zip`, "austria-key-qr.zip");
     if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
-    showFiles(keys, png, archive); message("QR готовы к отправке."); await loadHistory();
+    showFiles(keys, png, archive); message("QR готовы к отправке.");
   }
   async function loadAccounts() {
     if (!client.state.authenticated || client.state.principal.role !== "owner") return;
