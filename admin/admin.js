@@ -1,6 +1,9 @@
 // Lucide icon geometry is distributed under the ISC license (see LICENSE-lucide.txt).
 const icons = {
   download: ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3"],
+  copy: ["M9 9h13v13H9z", "M5 15H2V2h13v3"],
+  share: ["M12 16V3", "m7 8 5-5 5 5", "M5 13v8h14v-8"],
+  view: ["M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7", "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6"],
   revoke: ["M3 6h18", "M19 6v14H5V6", "M8 6V3h8v3", "M10 10v6M14 10v6"],
   approve: ["m20 6-11 11-5-5"], reject: ["m18 6-12 12", "M6 6l12 12"],
 };
@@ -75,6 +78,33 @@ export function downloadFilename(header, fallback) {
   if (extended) { try { name = decodeURIComponent(extended[1]); } catch { name = fallback; } }
   name = name.replace(/[\/\\\x00-\x1f\x7f]/g, "_").replace(/^\.+/, "").slice(0, 180);
   return name || fallback;
+}
+
+export function collageLayout(sizes) {
+  if (!sizes.length || sizes.length > 50 || sizes.some(({ width, height }) => !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 4096 || height > 4096)) throw new ApiError("INVALID_RESPONSE");
+  const columns = Math.ceil(Math.sqrt(sizes.length)), rows = Math.ceil(sizes.length / columns);
+  const width = Math.max(...sizes.map((size) => size.width)), height = Math.max(...sizes.map((size) => size.height));
+  // Bound canvas memory on phones; power-of-two scaling keeps QR modules crisp.
+  const divisor = 2 ** Math.max(0, Math.ceil(Math.log2(Math.sqrt(columns * rows * (width + 16) * (height + 16) / 14000000))));
+  const tileWidth = Math.ceil(width / divisor) + 16, tileHeight = Math.ceil(height / divisor) + 16;
+  return { columns, rows, divisor, tileWidth, tileHeight, width: columns * tileWidth, height: rows * tileHeight };
+}
+
+export async function qrCollage(blobs, doc) {
+  async function withImage(blob, action) {
+    const url = URL.createObjectURL(blob), image = doc.createElement("img");
+    try { image.src = url; await image.decode(); return action(image); }
+    finally { image.src = ""; URL.revokeObjectURL(url); }
+  }
+  const sizes = [];
+  for (const blob of blobs) sizes.push(await withImage(blob, (image) => ({ width: image.naturalWidth, height: image.naturalHeight })));
+  const layout = collageLayout(sizes), canvas = doc.createElement("canvas"); canvas.width = layout.width; canvas.height = layout.height;
+  try {
+    const context = canvas.getContext("2d"); if (!context) throw new ApiError("INVALID_RESPONSE");
+    context.fillStyle = "white"; context.fillRect(0, 0, canvas.width, canvas.height); context.imageSmoothingEnabled = false;
+    for (let index = 0; index < blobs.length; index++) await withImage(blobs[index], (image) => context.drawImage(image, (index % layout.columns) * layout.tileWidth + 8, Math.floor(index / layout.columns) * layout.tileHeight + 8, image.naturalWidth / layout.divisor, image.naturalHeight / layout.divisor));
+    return await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new ApiError("INVALID_RESPONSE")), "image/png"));
+  } finally { canvas.width = canvas.height = 0; }
 }
 
 export class SessionClient {
@@ -207,11 +237,12 @@ export function requestNumberPreference(storage, apiBase) {
   };
 }
 
-export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, saveBlob, timer, now, storage = null, preferenceStorage = null }) {
+export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, delivery = globalThis.navigator, clipboardItem = globalThis.ClipboardItem, saveBlob, timer, now, storage = null, preferenceStorage = null }) {
   const $ = (id) => doc.getElementById(id);
   const requestPreference = requestNumberPreference(preferenceStorage, apiBase);
   $("login-request-number").value = requestPreference.read();
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false;
+  let deliveryKeys = [], previewUrls = [];
   const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
   function icon(name) {
@@ -243,6 +274,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   }
   function resetPrivate() {
     historySequence++; accountSequence++;
+    clearDelivery();
     for (const id of ["history", "requests", "principals", "batch-result", "registration-result"]) $(id).replaceChildren();
     $("batch-result").hidden = true; $("registration-result").hidden = true;
     $("register-panel").hidden = true; $("register-form").reset(); $("bootstrap-label").hidden = true;
@@ -316,12 +348,59 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     return new Promise((resolve) => { const dialog = $("confirm-dialog"); dialog.returnValue = ""; dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true }); dialog.showModal(); });
   }
   function date(value) { return new Date(value * 1000).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
-  async function download(path, filename) {
+  function clearDelivery() {
+    previewUrls.forEach((url) => URL.revokeObjectURL(url)); previewUrls = []; deliveryKeys = [];
+    $("batch-result").replaceChildren(); $("batch-result").hidden = true;
+  }
+  async function fileFor(path, filename) {
     const result = await client.request(path, { blob: true });
-    const name = downloadFilename(result.disposition, filename);
-    if (saveBlob) { await saveBlob(result.data, name); return; }
-    const url = URL.createObjectURL(result.data); const anchor = el("a"); anchor.href = url; anchor.download = name; anchor.hidden = true;
+    return new File([result.data], downloadFilename(result.disposition, filename), { type: result.data.type });
+  }
+  async function saveFile(file) {
+    if (saveBlob) { await saveBlob(file, file.name); return; }
+    const url = URL.createObjectURL(file); const anchor = el("a"); anchor.href = url; anchor.download = file.name; anchor.hidden = true;
     doc.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function download(path, filename) { await saveFile(await fileFor(path, filename)); }
+  function deliveryAction(operation, success) {
+    if (busy || destroyed || !client.state.authenticated) return;
+    // Invoke clipboard/share immediately in the click gesture, with files already prepared.
+    const generation = client.generation;
+    try { Promise.resolve(operation()).then(() => { if (generation === client.generation && success) message(success); }, (error) => {
+      if (generation === client.generation && error.name !== "AbortError") message("Не удалось передать файл. Скачайте его и прикрепите в мессенджере.", true);
+    }); } catch { message("В этом браузере передача файла недоступна. Скачайте его и прикрепите в мессенджере."); }
+  }
+  function copyImage(file) {
+    deliveryAction(() => {
+      if (!clipboardItem || !delivery?.clipboard?.write) throw new Error("Clipboard unavailable");
+      return delivery.clipboard.write([new clipboardItem({ "image/png": file })]);
+    }, "Изображение скопировано. Его можно вставить в мессенджер.");
+  }
+  function fileButtons(file, label) {
+    const actions = el("div", null, "actions");
+    const button = (name, text, action) => { const node = el("button", text); node.type = "button"; node.prepend(icon(name)); node.addEventListener("click", action); return node; };
+    actions.append(button("download", `Скачать ${label}`, () => run(() => saveFile(file))));
+    if (file.type === "image/png") actions.append(button("copy", `Копировать ${label}`, () => copyImage(file)));
+    actions.append(button("share", `Поделиться ${label}`, () => deliveryAction(() => {
+      if (!delivery?.share || !delivery?.canShare?.({ files: [file] })) throw new Error("File sharing unavailable");
+      return delivery.share({ files: [file] });
+    })));
+    return actions;
+  }
+  function showFiles(keys, png, archive = null) {
+    clearDelivery(); deliveryKeys = keys.map((key) => key.key_id);
+    const title = keys.length === 1 ? `Квартира ${keys[0].apartment}, QR № ${keys[0].apartment_number}` : `Квартира ${keys[0].apartment}: ${keys.length} QR`;
+    const image = el("img"); image.alt = title; const url = URL.createObjectURL(png); previewUrls.push(url); image.src = url;
+    const preview = el("button", null, "qr-preview"); preview.type = "button"; preview.title = "Копировать изображение"; preview.setAttribute("aria-label", "Копировать изображение QR"); preview.append(image); preview.addEventListener("click", () => copyImage(png));
+    $("batch-result").append(el("strong", title), preview, fileButtons(png, keys.length === 1 ? "QR" : "коллаж"));
+    if (archive) $("batch-result").append(fileButtons(archive, "ZIP"));
+    $("batch-result").hidden = false; updateControls();
+  }
+  async function showKey(key) {
+    const generation = client.generation;
+    const file = await fileFor(`key/${encodeURIComponent(key.key_id)}/access.png`, `austria-key-${key.apartment.replaceAll("/", "-")}-${key.apartment_number}.png`);
+    if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
+    showFiles([key], file); message("");
   }
   async function loadHistory() {
     if (!client.state.authenticated) return;
@@ -339,10 +418,13 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
       for (const text of [date(key.created_at), key.apartment, String(key.apartment_number), String(key.quantity)]) row.append(el("td", text));
       const state = el("td"); state.append(el("span", labels[key.status], `badge ${key.status}`)); row.append(state);
       const cell = el("td"), actions = el("div", null, "actions");
-      if (key.download_available) actions.append(iconButton("download", `Скачать QR ${key.apartment} № ${key.apartment_number}`, () => run(() => download(`key/${encodeURIComponent(key.key_id)}/access.png`, `austria-key-${key.apartment.replaceAll("/", "-")}-${key.apartment_number}.png`))));
+      if (key.download_available) {
+        actions.append(iconButton("view", `Показать QR ${key.apartment} № ${key.apartment_number}`, () => run(() => showKey(key))));
+        actions.append(iconButton("download", `Скачать QR ${key.apartment} № ${key.apartment_number}`, () => run(() => download(`key/${encodeURIComponent(key.key_id)}/access.png`, `austria-key-${key.apartment.replaceAll("/", "-")}-${key.apartment_number}.png`))));
+      }
       if (key.status !== "revoked") actions.append(iconButton("revoke", `Отозвать QR ${key.apartment} № ${key.apartment_number}`, async () => {
         if (busy || !await confirm("Отозвать доступ?", `Квартира ${key.apartment}, QR № ${key.apartment_number}.\nОтзыв нельзя отменить. Контроллер обычно получает его в течение 5 минут; без связи ранее активированный доступ может действовать до 24 часов после последней синхронизации.`, "Отозвать")) return;
-        run(async () => { await client.request("revoke", { body: { key_id: key.key_id, apartment: key.apartment, apartment_number: key.apartment_number } }); message(`Доступ ${key.apartment}, QR № ${key.apartment_number} отозван.`); await loadHistory(); }, { mutation: true });
+        run(async () => { await client.request("revoke", { body: { key_id: key.key_id, apartment: key.apartment, apartment_number: key.apartment_number } }); if (deliveryKeys.includes(key.key_id)) clearDelivery(); message(`Доступ ${key.apartment}, QR № ${key.apartment_number} отозван.`); await loadHistory(); }, { mutation: true });
       }, true));
       if (!actions.children.length) actions.append(el("span", "—", "muted")); cell.append(actions); row.append(cell); $("history").append(row);
     }
@@ -353,13 +435,21 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (!/^[0-9]{1,5}(\/[0-9]{1,5})?$/.test(apartment)) throw new ApiError("INVALID_APARTMENT");
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 50) throw new ApiError("QUANTITY_1_TO_50");
     message("Выдача QR…");
+    clearDelivery();
     const result = await client.request("issue", { body: { apartment, quantity } });
     if (result.quantity !== quantity || typeof result.batch_id !== "string") throw new ApiError("INVALID_RESPONSE");
-    const button = el("button", "Скачать ZIP пакета"); button.type = "button";
-    button.prepend(icon("download"));
-    button.addEventListener("click", () => run(() => download(`batch/${encodeURIComponent(result.batch_id)}/access.zip`, "austria-key-qr.zip")));
-    $("batch-result").replaceChildren(el("span", `Выдано ${quantity} QR для ${apartment}.`), button); $("batch-result").hidden = false;
-    message("QR выпущены. Скачайте и передайте их пользователям."); await loadHistory();
+    message("QR выпущены. Подготовка файлов…");
+    const generation = client.generation;
+    const history = await client.request(`history?apartment=${encodeURIComponent(apartment)}`);
+    if (!Array.isArray(history.keys)) throw new ApiError("INVALID_RESPONSE");
+    const keys = history.keys.filter((key) => key.batch_id === result.batch_id).sort((a, b) => a.apartment_number - b.apartment_number);
+    if (keys.length !== quantity || keys.some((key) => !key.download_available || typeof key.key_id !== "string" || key.apartment !== apartment || !Number.isInteger(key.apartment_number))) throw new ApiError("INVALID_RESPONSE");
+    const files = [];
+    for (const key of keys) files.push(await fileFor(`key/${encodeURIComponent(key.key_id)}/access.png`, `austria-key-${apartment.replaceAll("/", "-")}-${key.apartment_number}.png`));
+    const png = quantity === 1 ? files[0] : new File([await qrCollage(files, doc)], `austria-key-${apartment.replaceAll("/", "-")}-collage-${keys[0].apartment_number}-${keys[keys.length - 1].apartment_number}.png`, { type: "image/png" });
+    const archive = quantity === 1 ? null : await fileFor(`batch/${encodeURIComponent(result.batch_id)}/access.zip`, "austria-key-qr.zip");
+    if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
+    showFiles(keys, png, archive); message("QR готовы к отправке."); await loadHistory();
   }
   async function loadAccounts() {
     if (!client.state.authenticated || client.state.principal.role !== "owner") return;
