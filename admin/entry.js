@@ -1,4 +1,4 @@
-import { createAdminApp } from "./admin.js";
+import { createAdminApp } from "./admin.js?v=20261011-share2";
 
 if (window.self !== window.top) {
   document.body.replaceChildren(document.createTextNode("Откройте панель администратора в отдельной вкладке."));

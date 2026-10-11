@@ -80,6 +80,13 @@ export function downloadFilename(header, fallback) {
   return name || fallback;
 }
 
+export function sharePreparedFile(delivery, file) {
+  if (typeof delivery?.share !== "function") throw new ApiError("SHARE_UNAVAILABLE");
+  // Some vendor browsers expose share() without a working canShare(). Let the
+  // native API validate the file; files-only avoids silently sharing empty text.
+  return delivery.share({ files: [file] });
+}
+
 export function collageLayout(sizes) {
   if (!sizes.length || sizes.length > 50 || sizes.some(({ width, height }) => !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 4096 || height > 4096)) throw new ApiError("INVALID_RESPONSE");
   const columns = Math.ceil(Math.sqrt(sizes.length)), rows = Math.ceil(sizes.length / columns);
@@ -381,11 +388,31 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const button = (name, text, action) => { const node = el("button", text); node.type = "button"; node.prepend(icon(name)); node.addEventListener("click", action); return node; };
     actions.append(button("download", `Скачать ${label}`, () => run(() => saveFile(file))));
     if (file.type === "image/png") actions.append(button("copy", `Копировать ${label}`, () => copyImage(file)));
-    actions.append(button("share", `Поделиться ${label}`, () => deliveryAction(() => {
-      if (!delivery?.share || !delivery?.canShare?.({ files: [file] })) throw new Error("File sharing unavailable");
-      return delivery.share({ files: [file] });
-    })));
+    actions.append(button("share", `Поделиться ${label}`, () => shareFile(file)));
     return actions;
+  }
+  function shareFile(file) {
+    if (busy || destroyed || !client.state.authenticated) return;
+    const generation = client.generation;
+    const probe = { share: Number(typeof delivery?.share === "function"), can_share: Number(typeof delivery?.canShare === "function"), file_ok: "unknown", active: Number(delivery?.userActivation?.isActive === true), type: file.type === "image/png" ? "png" : "zip" };
+    try { if (probe.can_share) probe.file_ok = Number(delivery.canShare({ files: [file] })); } catch { probe.file_ok = "error"; }
+    function report(outcome) {
+      if (generation !== client.generation) return;
+      const allowed = new Set(["started", "done", "AbortError", "NotAllowedError", "TypeError", "InvalidStateError", "DataError", "SHARE_UNAVAILABLE"]);
+      const params = new URLSearchParams({ share_probe: "1", ...probe, outcome: allowed.has(outcome) ? outcome : "other" });
+      // Only bounded capability flags reach the existing access log, never file data or identifiers.
+      client.request(`state?${params}`, { notifyExpired: false }).catch(() => {});
+    }
+    function failed(error) {
+      if (generation !== client.generation) return;
+      report(error.code ?? error.name);
+      if (error.name === "AbortError") { message("Отправка отменена."); return; }
+      if (error.code === "SHARE_UNAVAILABLE") message("Этот браузер не предоставляет сайту системное меню отправки файлов. Скачайте изображение и отправьте его из Галереи.", true);
+      else if (error.name === "TypeError") message("Браузер не поддерживает отправку этого файла. Скачайте его и отправьте из Галереи или приложения «Файлы».", true);
+      else message("Браузер не открыл меню отправки. Скачайте файл и отправьте его из Галереи или приложения «Файлы».", true);
+    }
+    try { const result = sharePreparedFile(delivery, file); report("started"); Promise.resolve(result).then(() => report("done"), failed); }
+    catch (error) { failed(error); }
   }
   function showFiles(keys, png, archive = null) {
     clearDelivery(); deliveryKeys = keys.map((key) => key.key_id);
