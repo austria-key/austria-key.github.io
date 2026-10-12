@@ -1,4 +1,4 @@
-import { createAdminApp } from "./admin.js?v=20261011-share3";
+import { createAdminApp } from "./admin.js?v=20261012-password1";
 
 if (window.self !== window.top) {
   document.body.replaceChildren(document.createTextNode("Откройте панель администратора в отдельной вкладке."));
@@ -7,6 +7,6 @@ if (window.self !== window.top) {
   try { storage = window.sessionStorage; } catch { /* Browser storage may be disabled. */ }
   let preferenceStorage = null;
   try { preferenceStorage = window.localStorage; } catch { /* The public request number can be entered manually. */ }
-  const app = createAdminApp({ document, storage, preferenceStorage, apiBase: "https://a.tlgrm.cx/austria-key-v2/admin-access/" });
+  const app = createAdminApp({ document, storage, preferenceStorage, persistentStorage: preferenceStorage, apiBase: "https://a.tlgrm.cx/austria-key-v2/admin-access/" });
   app.start();
 }

@@ -9,7 +9,10 @@ const icons = {
 };
 const labels = { pending: "Не использован", active: "Активирован", revoked: "Отозван" };
 const errorLabels = {
-  PASSKEY_REQUIRED: "Сеанс завершён. Войдите с одобренным Passkey.",
+  PASSKEY_REQUIRED: "Сеанс завершён. Войдите снова.",
+  PASSWORD_INVALID: "Неверный пароль или парольный вход недоступен для этого администратора.",
+  PASSWORD_LOGIN_FAILED: "Неверный пароль или парольный вход недоступен для этого администратора.",
+  PASSWORD_TRY_LATER: "Слишком много попыток входа. Повторите позже.",
   PASSKEY_NOT_APPROVED: "Этот Passkey ещё не одобрен владельцем или его права отозваны.",
   PASSKEY_VERIFICATION_FAILED: "Не удалось подтвердить Passkey. Начните заново.",
   OWNER_SETUP_REQUIRED: "Владелец ещё не завершил первоначальную настройку.",
@@ -20,7 +23,7 @@ const errorLabels = {
   INVALID_APARTMENT: "Введите номер квартиры, например 60/2.",
   QUANTITY_1_TO_50: "Допустимо от 1 до 50 QR в одном пакете.",
   CSRF_REQUIRED: "Сеанс недействителен. Завершите его и войдите снова.",
-  SESSION_REVOKED: "Сеанс завершён: права этого Passkey отозваны.",
+  SESSION_REVOKED: "Сеанс завершён: доступ отозван. Войдите снова.",
   LAST_OWNER_PASSKEY: "Нельзя отозвать последний действующий Passkey владельца.",
   OWNER_CANNOT_BE_DISABLED: "Нельзя отключить владельца.",
   FINGERPRINT_MISMATCH: "Отпечаток изменился. Обновите список запросов.",
@@ -118,26 +121,36 @@ export class SessionClient {
   #session = null;
   #epoch = 0;
   #timer = null;
-  constructor({ apiBase, fetchImpl = globalThis.fetch.bind(globalThis), onExpired = () => {}, now = () => Date.now(), timer = globalThis, storage = null }) {
+  constructor({ apiBase, fetchImpl = globalThis.fetch.bind(globalThis), onExpired = () => {}, now = () => Date.now(), timer = globalThis, storage = null, persistentStorage = null }) {
     this.base = new URL(apiBase); this.fetchImpl = fetchImpl; this.onExpired = onExpired; this.now = now; this.timer = timer;
-    this.storage = storage; this.storageKey = `austria-key-admin-session:${this.base.href}`;
+    this.storage = storage; this.persistentStorage = persistentStorage; this.storageKey = `austria-key-admin-session:${this.base.href}`;
   }
   get generation() { return this.#epoch; }
   get state() { return { authenticated: this.#session?.authenticated === true, principal: this.#session?.principal ? { ...this.#session.principal } : null }; }
   get available() { return this.#session !== null; }
-  clear() { this.#epoch++; this.timer.clearTimeout(this.#timer); this.#timer = null; this.#session = null; try { this.storage?.removeItem(this.storageKey); } catch { /* Storage may be disabled. */ } }
-  install(value) {
+  clear() {
+    this.#epoch++; this.timer.clearTimeout(this.#timer); this.#timer = null; this.#session = null;
+    for (const storage of [this.storage, this.persistentStorage]) { try { storage?.removeItem(this.storageKey); } catch { /* Storage may be disabled. */ } }
+  }
+  install(value, { remember = false } = {}) {
+    const persistent = value?.auth_method === "password" && value.persistent === true && value.expires_at === 0;
     if (!value || typeof value.session_token !== "string" || value.session_token.length < 32 ||
         typeof value.csrf_token !== "string" || value.csrf_token.length < 32 ||
-        !Number.isFinite(value.expires_at) || value.expires_at * 1000 <= this.now() ||
+        !Number.isFinite(value.expires_at) || (!persistent && value.expires_at * 1000 <= this.now()) || (persistent && value.authenticated !== true) ||
         value.rp_id !== "austria-key.github.io" || value.webauthn_origin !== "https://austria-key.github.io" ||
         typeof value.authenticated !== "boolean" || (value.authenticated && (!value.principal ||
           !["owner", "admin"].includes(value.principal.role) || typeof value.principal.id !== "string" || typeof value.principal.name !== "string"))) {
       throw new ApiError("INVALID_RESPONSE");
     }
     this.clear();
-    this.#session = { ...value, principal: value.authenticated ? { ...value.principal } : null };
-    if (value.authenticated) { try { this.storage?.setItem(this.storageKey, JSON.stringify(this.#session)); } catch { /* Login still works without persistence. */ } }
+    this.#session = { session_token: value.session_token, csrf_token: value.csrf_token, expires_at: value.expires_at,
+      authenticated: value.authenticated, principal: value.authenticated ? { id: value.principal.id, name: value.principal.name, role: value.principal.role } : null,
+      rp_id: value.rp_id, webauthn_origin: value.webauthn_origin, auth_method: value.auth_method, persistent: persistent };
+    if (value.authenticated) {
+      const storage = persistent && remember ? this.persistentStorage : this.storage;
+      try { storage?.setItem(this.storageKey, JSON.stringify(this.#session)); } catch { /* Login still works without persistence. */ }
+    }
+    if (persistent) return;
     const generation = this.#epoch;
     this.#timer = this.timer.setTimeout(() => {
       if (generation !== this.#epoch) return;
@@ -151,18 +164,22 @@ export class SessionClient {
     this.install(value); return this.state;
   }
   async resume() {
-    let saved;
-    try { saved = JSON.parse(this.storage?.getItem(this.storageKey) ?? "null"); }
+    let saved, remember = false;
+    try {
+      let serialized = this.storage?.getItem(this.storageKey);
+      if (!serialized) { serialized = this.persistentStorage?.getItem(this.storageKey); remember = !!serialized; }
+      saved = JSON.parse(serialized ?? "null");
+    }
     catch { this.clear(); }
-    if (!saved?.authenticated) return this.guest();
-    try { this.install(saved); }
+    if (!saved?.authenticated) { this.clear(); return this.guest(); }
+    try { this.install(saved, { remember }); }
     catch { this.clear(); return this.guest(); }
     // Never expose a stored role until the server has confirmed this session.
     this.#session.authenticated = false; this.#session.principal = null;
     const generation = this.#epoch;
     try {
       const state = await this.request("state", { notifyExpired: false });
-      this.install({ ...state, session_token: saved.session_token });
+      this.install({ ...state, session_token: saved.session_token }, { remember });
       return this.state;
     } catch (error) {
       if (error.status === 401) return this.guest();
@@ -185,7 +202,8 @@ export class SessionClient {
     const generation = this.#epoch;
     const headers = { Accept: blob ? "image/png, application/zip" : "application/json" };
     if (!anonymous) {
-      if (!this.#session || this.#session.expires_at * 1000 <= this.now()) {
+      const persistent = this.#session?.auth_method === "password" && this.#session.persistent === true && this.#session.expires_at === 0;
+      if (!this.#session || (!persistent && this.#session.expires_at * 1000 <= this.now())) {
         this.clear(); this.onExpired(new ApiError("PASSKEY_REQUIRED", 401)); throw new ApiError("PASSKEY_REQUIRED", 401);
       }
       headers.Authorization = `Bearer ${this.#session.session_token}`;
@@ -244,13 +262,19 @@ export function requestNumberPreference(storage, apiBase) {
   };
 }
 
-export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, delivery = globalThis.navigator, clipboardItem = globalThis.ClipboardItem, saveBlob, timer, now, storage = null, preferenceStorage = null }) {
+export async function saveBrowserPassword(credentials, PasswordCredential, account, password) {
+  if (!credentials?.store || typeof PasswordCredential !== "function") return;
+  try { await credentials.store(new PasswordCredential({ id: account.id, name: account.name, password })); }
+  catch { /* Password Manager is optional and must not undo a successful login. */ }
+}
+
+export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials = globalThis.navigator?.credentials, passwordCredential = globalThis.PasswordCredential, delivery = globalThis.navigator, clipboardItem = globalThis.ClipboardItem, saveBlob, timer, now, storage = null, preferenceStorage = null, persistentStorage = null }) {
   const $ = (id) => doc.getElementById(id);
   const requestPreference = requestNumberPreference(preferenceStorage, apiBase);
   $("login-request-number").value = requestPreference.read();
-  let busy = false, historySequence = 0, accountSequence = 0, destroyed = false;
+  let busy = false, historySequence = 0, accountSequence = 0, destroyed = false, authMode = "passkey", passwordAccounts = [];
   let deliveryKeys = [], previewUrls = [];
-  const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
+  const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, persistentStorage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
   function icon(name) {
     const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
@@ -265,7 +289,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (error?.name === "NotAllowedError" || error?.name === "AbortError") return "Подтверждение Passkey отменено или время ожидания истекло. Можно начать заново.";
     if (error?.code === "NETWORK_ERROR") return mutation ? "Ответ не получен. Проверьте историю перед повторным действием." : "Нет соединения с сервером. Повторите соединение.";
     if (error?.name === "SecurityError") return "Passkey недоступен на этом адресе. Откройте официальную панель администратора.";
-    if (error?.name === "NotSupportedError") return "На этом устройстве или в этом браузере недоступно создание такого Passkey. Попробуйте другой браузер с поддержкой Passkey или другое устройство. Пароль вместо Passkey не требуется.";
+    if (error?.name === "NotSupportedError") return "На этом устройстве или в этом браузере недоступно создание такого Passkey. Можно выбрать вход по паролю, если владелец подключил его к вашей учётной записи.";
     if (error?.name === "InvalidStateError") return "Этот ключ уже существует на устройстве. Попробуйте войти с Passkey или выбрать другой ключ.";
     return errorLabels[error?.code] ?? (error?.status === 429 ? "Слишком много запросов. Повторите позже." : "Не удалось выполнить действие. Обновите список или повторите вход.");
   }
@@ -277,6 +301,8 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     $("identity").textContent = authenticated ? `${principal.name} · ${principal.role === "owner" ? "Владелец" : "Администратор"}` : "";
     $("tab-accounts").hidden = !authenticated || principal.role !== "owner";
     for (const id of ["login", "show-register", "extra-passkey", "register", "issue", "logout"]) $(id).disabled = busy || !client.available;
+    for (const id of ["auth-passkey", "auth-password", "password-account", "password", "remember-password"]) $(id).disabled = busy;
+    $("password-login").disabled = busy || !client.available || !passwordAccounts.some((account) => account.id === $("password-account").value && account.password_enabled);
     doc.querySelectorAll("#history button, #requests button, #requests select, #principals button, #batch-result button").forEach((node) => { node.disabled = busy || !authenticated; });
   }
   function resetPrivate() {
@@ -285,6 +311,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     for (const id of ["history", "requests", "principals", "batch-result", "registration-result"]) $(id).replaceChildren();
     $("batch-result").hidden = true; $("registration-result").hidden = true;
     $("register-panel").hidden = true; $("register-form").reset(); $("bootstrap-label").hidden = true;
+    $("password").value = "";
     $("issue-form").reset(); $("filter-form").reset(); $("accounts-view").hidden = true; $("keys-view").hidden = false;
     $("tab-keys").classList.add("selected"); $("tab-keys").setAttribute("aria-current", "page");
     $("tab-accounts").classList.remove("selected"); $("tab-accounts").removeAttribute("aria-current");
@@ -293,7 +320,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   async function connect(clearMessage = true) {
     if (destroyed) return;
     $("retry-session").hidden = true; if (clearMessage) message("Соединение…");
-    try { await client.resume(); updateControls(); if (clearMessage) message(""); if (client.state.authenticated) await loadHistory(); }
+    try { await client.resume(); updateControls(); if (clearMessage) message(""); if (client.state.authenticated) await loadHistory(); else if (authMode === "password") await loadPasswordAccounts(); }
     catch (error) { if (!destroyed) { message(errorText(error), true); $("retry-session").hidden = false; } }
     updateControls();
   }
@@ -305,6 +332,44 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     finally { busy = false; updateControls(); }
   }
   function requireCredentials() { if (!credentials?.get || !credentials?.create) throw new ApiError("PASSKEY_VERIFICATION_FAILED"); }
+  async function loadPasswordAccounts() {
+    const result = await client.request("auth/password-accounts", { anonymous: true });
+    if (!Array.isArray(result?.principals) || result.principals.some((account) => typeof account.id !== "string" || typeof account.name !== "string" || typeof account.password_enabled !== "boolean")) throw new ApiError("INVALID_RESPONSE");
+    passwordAccounts = result.principals;
+    const previous = $("password-account").value;
+    $("password-account").replaceChildren();
+    for (const account of passwordAccounts) {
+      const option = el("option", `${account.name}${account.password_enabled ? "" : " — пароль не подключён"}`);
+      option.value = account.id; option.disabled = !account.password_enabled; $("password-account").append(option);
+    }
+    const selected = passwordAccounts.find((account) => account.id === previous && account.password_enabled) ?? passwordAccounts.find((account) => account.password_enabled);
+    $("password-account").value = selected?.id ?? "";
+    $("password-accounts-empty").hidden = passwordAccounts.some((account) => account.password_enabled);
+    updateControls();
+  }
+  function setAuthMode(mode) {
+    authMode = mode; $("passkey-login-panel").hidden = mode !== "passkey"; $("password-login-panel").hidden = mode !== "password";
+    $("register-panel").hidden = true; $("bootstrap").value = ""; $("password").value = "";
+    for (const name of ["passkey", "password"]) {
+      $("auth-" + name).classList.toggle("selected", mode === name); $("auth-" + name).setAttribute("aria-pressed", String(mode === name));
+    }
+    if (mode === "password") run(loadPasswordAccounts);
+  }
+  async function passwordLogin() {
+    const account = passwordAccounts.find((value) => value.id === $("password-account").value && value.password_enabled);
+    if (!account || !$("password").value) return;
+    const password = $("password").value, remember = $("remember-password").checked;
+    $("password").value = "";
+    message("Проверка пароля…");
+    const result = await client.request("auth/password-login", { body: { principal_id: account.id, password } });
+    if (result.auth_method !== "password" || result.persistent !== true || result.expires_at !== 0 || result.principal?.id !== account.id) throw new ApiError("INVALID_RESPONSE");
+    client.install(result, { remember }); resetPrivate(); updateControls(); message("Вход выполнен.");
+    if (remember) {
+      // Do not await an optional browser prompt before displaying the authenticated panel.
+      void saveBrowserPassword(credentials, passwordCredential, account, password);
+    }
+    await loadHistory();
+  }
   async function login() {
     requireCredentials(); message("Подтвердите вход на устройстве…");
     const value = $("login-request-number").value;
@@ -536,6 +601,10 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     updateControls();
   }
   $("login").addEventListener("click", () => run(login));
+  $("auth-passkey").addEventListener("click", () => setAuthMode("passkey"));
+  $("auth-password").addEventListener("click", () => setAuthMode("password"));
+  $("password-account").addEventListener("change", () => { $("password").value = ""; updateControls(); });
+  $("password-form").addEventListener("submit", (event) => { event.preventDefault(); run(passwordLogin); });
   $("show-register").addEventListener("click", showRegistration); $("extra-passkey").addEventListener("click", showRegistration);
   $("close-register").addEventListener("click", () => { $("register-panel").hidden = true; $("bootstrap").value = ""; });
   $("show-bootstrap").addEventListener("click", () => { $("bootstrap-label").hidden = !$("bootstrap-label").hidden; $("bootstrap").value = ""; });
