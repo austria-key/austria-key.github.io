@@ -363,7 +363,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     message("Проверка пароля…");
     const result = await client.request("auth/password-login", { body: { principal_id: account.id, password } });
     if (result.auth_method !== "password" || result.persistent !== true || result.expires_at !== 0 || result.principal?.id !== account.id) throw new ApiError("INVALID_RESPONSE");
-    client.install(result, { remember }); resetPrivate(); updateControls(); message("Вход выполнен.");
+    client.install(result, { remember }); resetPrivate(); updateControls(); message("");
     if (remember) {
       // Do not await an optional browser prompt before displaying the authenticated panel.
       void saveBrowserPassword(credentials, passwordCredential, account, password);
@@ -379,7 +379,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const credential = await credentials.get({ publicKey: credentialOptions(challenge.options) });
     if (generation !== client.generation) throw new ApiError("SESSION_CHANGED");
     const result = await client.request("auth/login-verify", { body: { challenge_id: challenge.challenge_id, credential: serializeCredential(credential) } });
-    client.install(result); resetPrivate(); updateControls(); message("Вход выполнен.");
+    client.install(result); resetPrivate(); updateControls(); message("");
     requestPreference.save(value);
     await loadHistory();
   }
