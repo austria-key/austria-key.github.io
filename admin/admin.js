@@ -59,6 +59,10 @@ export class ApiError extends Error {
   constructor(code, status = 0) { super(code); this.code = code; this.status = status; }
 }
 
+export function diagnosticTime(value) {
+  return new Date(value * 1000).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 export function controllerDiagnostics(value, deviceId) {
   const integer = (number, min = 0, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(number) && number >= min && number <= max;
   const boot = (id) => typeof id === "string" && /^[a-f0-9]{16}$/.test(id);
@@ -98,6 +102,10 @@ export function controllerDiagnostics(value, deviceId) {
     if (Object.hasOwn(e, "apartment")) {
       if (e.stage !== "ble" || e.code !== "relay_pulse" || typeof e.apartment !== "string" || !/^[0-9]{1,5}(?:\/[0-9]{1,5})?$/.test(e.apartment)) throw new ApiError("INVALID_RESPONSE");
       event.apartment = e.apartment;
+    }
+    if (Object.hasOwn(e, "occurred_at")) {
+      if (!integer(e.occurred_at, 1, 4102444800)) throw new ApiError("INVALID_RESPONSE");
+      event.occurred_at = e.occurred_at;
     }
     return event;
   });
@@ -730,7 +738,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     $("controller-diagnostics-summary").append(el("dt", "Проверка структуры Bluetooth"), el("dd", !structureReported ? "Нет данных" : structureCompatible ? "Структура Bluetooth совместима" : "Структура Bluetooth отличается от прежней"));
     for (const event of data.events) {
       const row = el("tr");
-      for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.apartment ?? "—", event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
+      for (const value of [event.occurred_at === undefined ? "Неизвестно" : diagnosticTime(event.occurred_at), diagnosticTime(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.apartment ?? "—", event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
       $("controller-diagnostics-events").append(row);
     }
     $("controller-diagnostics-empty").hidden = data.events.length !== 0;

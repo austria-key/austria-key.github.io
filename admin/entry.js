@@ -1,4 +1,4 @@
-import { createAdminApp } from "./admin.js?v=20261014-apartment1";
+import { createAdminApp } from "./admin.js?v=20261014-event-time1";
 
 if (window.self !== window.top) {
   document.body.replaceChildren(document.createTextNode("Откройте панель администратора в отдельной вкладке."));
