@@ -7,8 +7,8 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src https://a.tlgrm.cx; base-uri 'none'; form-action 'none'; object-src 'none'">
   <title>Австрия Ключ: администратор</title>
-  <link rel="stylesheet" href="admin.css?v=20261013-login-message1-management1-diagnostics1-ble3-compat1">
-  <script type="module" src="entry.js?v=20261013-login-message1-management1-diagnostics1-ble3-compat1"></script>
+  <link rel="stylesheet" href="admin.css?v=20261014-panic1">
+  <script type="module" src="entry.js?v=20261014-panic1"></script>
 </head>
 <body>
   <header class="topbar">
@@ -88,6 +88,10 @@
           <dl id="controller-diagnostics-summary" class="diagnostics-summary"></dl>
           <div class="table-wrap"><table><thead><tr><th>Получено сервером</th><th>Запуск</th><th>После запуска</th><th>Этап</th><th>Результат</th><th>HTTP</th><th>TLS</th><th>Причина Wi-Fi</th></tr></thead><tbody id="controller-diagnostics-events"></tbody></table></div>
           <p id="controller-diagnostics-empty" class="empty" hidden>Событий пока нет.</p>
+          <div id="controller-crashes" hidden>
+            <h3>Аварийные перезапуски</h3>
+            <div class="table-wrap"><table><thead><tr><th>Получено сервером</th><th>Прошивка</th><th>Причина</th><th>Ядро</th><th>Адрес сбоя</th><th>Трассировка</th></tr></thead><tbody id="controller-diagnostics-crashes"></tbody></table></div>
+          </div>
         </section>
         <section>
           <h2>Изменить Wi-Fi</h2>

@@ -11,6 +11,7 @@ const icons = {
 const labels = { pending: "Не использован", active: "Активирован", revoked: "Отозван" };
 const diagnosticStages = { wifi: "Wi-Fi", ble: "Bluetooth", activation: "Активация", registry: "Синхронизация доступа", identity: "Проверка контроллера" };
 const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Соединение разорвано", connected: "Соединение установлено", advertising_failed: "Ошибка объявления Bluetooth", advertising_restarted: "Объявление Bluetooth возобновлено", idle_timeout: "Соединение закрыто из-за бездействия", state_recovered: "Состояние Bluetooth восстановлено", hello: "Запрос соединения получен", command_received: "Команда открытия получена", result_ready: "Ответ на команду подготовлен", relay_pulse: "Сигнал открытия подан на реле" };
+const crashReasons = { abort: "Программная аварийная остановка", exception: "Исключение", watchdog: "Сторожевой таймер", other: "Другая авария" };
 const errorLabels = {
   PASSKEY_REQUIRED: "Сеанс завершён. Войдите снова.",
   PASSWORD_INVALID: "Неверный пароль или парольный вход недоступен для этого администратора.",
@@ -85,13 +86,26 @@ export function controllerDiagnostics(value, deviceId) {
       if (!integer(s[field], 1, 65535)) throw new ApiError("INVALID_RESPONSE");
       snapshot[field] = s[field];
     }
+    if (Object.hasOwn(s, "nimble_stack_free")) {
+      if (s.nimble_stack_free !== null && !integer(s.nimble_stack_free, 0, 65536)) throw new ApiError("INVALID_RESPONSE");
+      snapshot.nimble_stack_free = s.nimble_stack_free;
+    }
   } else if (value.last_received !== null) throw new ApiError("INVALID_RESPONSE");
   const events = value.events.map((e) => {
     if (!e || !boot(e.boot_id) || !integer(e.seq, 1) || !integer(e.uptime_ms) || !Object.hasOwn(diagnosticStages, e.stage) || !Object.hasOwn(diagnosticCodes, e.code) ||
         !integer(e.http_status, 0, 599) || (e.http_status > 0 && e.http_status < 100) || !integer(e.tls_error, -2147483648, 2147483647) || !integer(e.wifi_reason, 0, 255) || !integer(e.received_at)) throw new ApiError("INVALID_RESPONSE");
     return { boot_id: e.boot_id, seq: e.seq, uptime_ms: e.uptime_ms, stage: e.stage, code: e.code, http_status: e.http_status, tls_error: e.tls_error, wifi_reason: e.wifi_reason, received_at: e.received_at };
   });
-  return { device_id: deviceId, snapshot, events, last_received: value.last_received };
+  if (value.crashes !== undefined && (!Array.isArray(value.crashes) || value.crashes.length > 16)) throw new ApiError("INVALID_RESPONSE");
+  const crashes = (value.crashes ?? []).map((c) => {
+    if (!c || typeof c.id !== "string" || !/^[a-f0-9]{32}$/.test(c.id) || typeof c.firmware !== "string" || !/^[A-Za-z0-9._+-]{1,48}$/.test(c.firmware) ||
+        !Object.hasOwn(crashReasons, c.reason) || !integer(c.core, 0, 1) || !integer(c.pc, 0, 0xffffffff) || !integer(c.received_at) ||
+        !Array.isArray(c.backtrace) || c.backtrace.length > 16 || !c.backtrace.every((a) => integer(a, 0, 0xffffffff)) ||
+        typeof c.backtrace_corrupt !== "boolean" || typeof c.backtrace_continues !== "boolean") throw new ApiError("INVALID_RESPONSE");
+    return { id: c.id, firmware: c.firmware, reason: c.reason, core: c.core, pc: c.pc, received_at: c.received_at,
+      backtrace: [...c.backtrace], backtrace_corrupt: c.backtrace_corrupt, backtrace_continues: c.backtrace_continues };
+  });
+  return { device_id: deviceId, snapshot, events, crashes, last_received: value.last_received };
 }
 
 export function decodeBase64url(value) {
@@ -677,6 +691,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (!$("controller-diagnostics")) return;
     $("controller-diagnostics").hidden = true;
     $("controller-diagnostics-summary").replaceChildren(); $("controller-diagnostics-events").replaceChildren();
+    $("controller-diagnostics-crashes").replaceChildren(); $("controller-crashes").hidden = true;
     $("controller-diagnostics-status").textContent = "";
   }
   function uptime(milliseconds) { const seconds = Math.floor(milliseconds / 1000); return `${Math.floor(seconds / 3600)} ч ${Math.floor(seconds % 3600 / 60)} мин ${seconds % 60} с`; }
@@ -685,6 +700,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const sequence = ++diagnosticsSequence; diagnosticsDevice = deviceId;
     $("controller-diagnostics").hidden = false; $("controller-diagnostics-title").textContent = `Диагностика · ${deviceId}`;
     $("controller-diagnostics-summary").replaceChildren(); $("controller-diagnostics-events").replaceChildren();
+    $("controller-diagnostics-crashes").replaceChildren(); $("controller-crashes").hidden = true;
     $("controller-diagnostics-empty").hidden = true; $("controller-diagnostics-status").textContent = "Получение последнего снимка…";
     let data;
     try { data = controllerDiagnostics(await client.request(`api/controllers/diagnostics?device_id=${encodeURIComponent(deviceId)}`), deviceId); }
@@ -697,6 +713,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const facts = [ ["Прошивка", s.firmware], ["Wi-Fi", s.wifi_connected ? "Подключён" : "Отключён"], ["Сигнал Wi-Fi", s.wifi_rssi === null ? "Нет данных" : `${s.wifi_rssi} dBm`], ["Последний запрос HTTPS", lastHttps ? `${diagnosticStages[lastHttps.stage]}: ${diagnosticCodes[lastHttps.code]} · после запуска ${uptime(lastHttps.uptime_ms)}` : "Нет данных"], ["Время подтверждено", s.trusted_time ? "Да" : "Нет"], ["Сохранённый доступ", `${s.registry_count} записей · ${s.registry_valid ? "проверен" : "не подтверждён"}`], ["Свободная память", `${s.free_heap} байт · минимум ${s.min_heap} байт`], ["После запуска", uptime(s.uptime_ms)], ["Запуск", s.boot_id], ["Событий не сохранено", String(s.dropped_events)] ];
     for (const [name, value] of facts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", value));
     $("controller-diagnostics-summary").append(el("dt", "Причина перезапуска (код)"), el("dd", String(s.reset_reason)));
+    $("controller-diagnostics-summary").append(el("dt", "Минимальный запас стека Bluetooth"), el("dd", s.nimble_stack_free == null ? "Нет данных" : `${s.nimble_stack_free} байт`));
     const lastConnect = data.events.filter((event) => event.boot_id === s.boot_id && event.stage === "ble" && event.code === "connected" && event.uptime_ms <= s.uptime_ms).slice(-1)[0];
     const bleFacts = [ ["Соединений Bluetooth", s.ble_peers ?? "Нет данных"], ["Объявление Bluetooth", s.ble_advertising === undefined ? "Нет данных" : s.ble_advertising ? "Включено" : "Выключено"], ["Возраст соединения Bluetooth", s.ble_connection_ms == null ? "Нет данных" : uptime(s.ble_connection_ms)], ["Без обмена данными Bluetooth", s.ble_idle_ms == null ? "Нет данных" : uptime(s.ble_idle_ms)], ["Последнее подключение Bluetooth", lastConnect ? `${uptime(s.uptime_ms - lastConnect.uptime_ms)} до снимка · после запуска ${uptime(lastConnect.uptime_ms)}` : "Нет события в сохранённой истории этого запуска"] ];
     for (const [name, value] of bleFacts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", String(value)));
@@ -712,6 +729,15 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
       $("controller-diagnostics-events").append(row);
     }
     $("controller-diagnostics-empty").hidden = data.events.length !== 0;
+    const hex = (value) => `0x${value.toString(16).padStart(8, "0")}`;
+    for (const crash of data.crashes) {
+      const row = el("tr");
+      const trace = crash.backtrace.map(hex).join(" · ") || "Нет данных";
+      const flags = [crash.backtrace_corrupt ? "Повреждена" : "", crash.backtrace_continues ? "Неполная" : ""].filter(Boolean).join(" · ");
+      for (const value of [date(crash.received_at), crash.firmware, crashReasons[crash.reason], String(crash.core), hex(crash.pc), `${trace}${flags ? ` (${flags})` : ""}`]) row.append(el("td", value));
+      $("controller-diagnostics-crashes").append(row);
+    }
+    $("controller-crashes").hidden = data.crashes.length === 0;
   }
   function updateFirmwareChoices() {
     const selected = controllers.find((item) => item.device_id === $("firmware-controller").value);
