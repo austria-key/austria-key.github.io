@@ -94,7 +94,12 @@ export function controllerDiagnostics(value, deviceId) {
   const events = value.events.map((e) => {
     if (!e || !boot(e.boot_id) || !integer(e.seq, 1) || !integer(e.uptime_ms) || !Object.hasOwn(diagnosticStages, e.stage) || !Object.hasOwn(diagnosticCodes, e.code) ||
         !integer(e.http_status, 0, 599) || (e.http_status > 0 && e.http_status < 100) || !integer(e.tls_error, -2147483648, 2147483647) || !integer(e.wifi_reason, 0, 255) || !integer(e.received_at)) throw new ApiError("INVALID_RESPONSE");
-    return { boot_id: e.boot_id, seq: e.seq, uptime_ms: e.uptime_ms, stage: e.stage, code: e.code, http_status: e.http_status, tls_error: e.tls_error, wifi_reason: e.wifi_reason, received_at: e.received_at };
+    const event = { boot_id: e.boot_id, seq: e.seq, uptime_ms: e.uptime_ms, stage: e.stage, code: e.code, http_status: e.http_status, tls_error: e.tls_error, wifi_reason: e.wifi_reason, received_at: e.received_at };
+    if (Object.hasOwn(e, "apartment")) {
+      if (e.stage !== "ble" || e.code !== "relay_pulse" || typeof e.apartment !== "string" || !/^[0-9]{1,5}(?:\/[0-9]{1,5})?$/.test(e.apartment)) throw new ApiError("INVALID_RESPONSE");
+      event.apartment = e.apartment;
+    }
+    return event;
   });
   if (value.crashes !== undefined && (!Array.isArray(value.crashes) || value.crashes.length > 16)) throw new ApiError("INVALID_RESPONSE");
   const crashes = (value.crashes ?? []).map((c) => {
@@ -725,7 +730,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     $("controller-diagnostics-summary").append(el("dt", "Проверка структуры Bluetooth"), el("dd", !structureReported ? "Нет данных" : structureCompatible ? "Структура Bluetooth совместима" : "Структура Bluetooth отличается от прежней"));
     for (const event of data.events) {
       const row = el("tr");
-      for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
+      for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.apartment ?? "—", event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
       $("controller-diagnostics-events").append(row);
     }
     $("controller-diagnostics-empty").hidden = data.events.length !== 0;
