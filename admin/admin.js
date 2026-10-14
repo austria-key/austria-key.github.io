@@ -8,6 +8,8 @@ const icons = {
   approve: ["m20 6-11 11-5-5"], reject: ["m18 6-12 12", "M6 6l12 12"],
 };
 const labels = { pending: "Не использован", active: "Активирован", revoked: "Отозван" };
+const diagnosticStages = { wifi: "Wi-Fi", activation: "Активация", registry: "Синхронизация доступа", identity: "Проверка контроллера" };
+const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Wi-Fi отключён" };
 const errorLabels = {
   PASSKEY_REQUIRED: "Сеанс завершён. Войдите снова.",
   PASSWORD_INVALID: "Неверный пароль или парольный вход недоступен для этого администратора.",
@@ -53,6 +55,27 @@ const errorLabels = {
 
 export class ApiError extends Error {
   constructor(code, status = 0) { super(code); this.code = code; this.status = status; }
+}
+
+export function controllerDiagnostics(value, deviceId) {
+  const integer = (number, min = 0, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(number) && number >= min && number <= max;
+  const boot = (id) => typeof id === "string" && /^[a-f0-9]{16}$/.test(id);
+  if (!value || value.device_id !== deviceId || !/^[a-f0-9]{12}$/.test(deviceId) || typeof value.gate_id !== "string" || !Array.isArray(value.events) || value.events.length > 64 || (value.last_received !== null && !integer(value.last_received))) throw new ApiError("INVALID_RESPONSE");
+  let snapshot = null;
+  if (value.snapshot !== null) {
+    const s = value.snapshot;
+    if (!s || !boot(s.boot_id) || typeof s.firmware !== "string" || !/^[A-Za-z0-9._+-]{1,48}$/.test(s.firmware) ||
+        ![s.wifi_connected, s.trusted_time, s.registry_valid].every((field) => typeof field === "boolean") ||
+        (s.wifi_rssi !== null && !integer(s.wifi_rssi, -127, 0)) || ![s.uptime_ms, s.seq, s.dropped_events].every((field) => integer(field)) ||
+        ![s.free_heap, s.min_heap].every((field) => integer(field, 0, 64 * 1024 * 1024)) || !integer(s.registry_count, 0, 131072) || !integer(s.reset_reason, 0, 32) || value.last_received === null) throw new ApiError("INVALID_RESPONSE");
+    snapshot = { boot_id: s.boot_id, firmware: s.firmware, wifi_rssi: s.wifi_rssi, wifi_connected: s.wifi_connected, trusted_time: s.trusted_time, registry_valid: s.registry_valid, registry_count: s.registry_count, uptime_ms: s.uptime_ms, seq: s.seq, dropped_events: s.dropped_events, free_heap: s.free_heap, min_heap: s.min_heap, reset_reason: s.reset_reason };
+  } else if (value.last_received !== null) throw new ApiError("INVALID_RESPONSE");
+  const events = value.events.map((e) => {
+    if (!e || !boot(e.boot_id) || !integer(e.seq, 1) || !integer(e.uptime_ms) || !Object.hasOwn(diagnosticStages, e.stage) || !Object.hasOwn(diagnosticCodes, e.code) ||
+        !integer(e.http_status, 0, 599) || (e.http_status > 0 && e.http_status < 100) || !integer(e.tls_error, -2147483648, 2147483647) || !integer(e.wifi_reason, 0, 255) || !integer(e.received_at)) throw new ApiError("INVALID_RESPONSE");
+    return { boot_id: e.boot_id, seq: e.seq, uptime_ms: e.uptime_ms, stage: e.stage, code: e.code, http_status: e.http_status, tls_error: e.tls_error, wifi_reason: e.wifi_reason, received_at: e.received_at };
+  });
+  return { device_id: deviceId, snapshot, events, last_received: value.last_received };
 }
 
 export function decodeBase64url(value) {
@@ -288,6 +311,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false, authMode = "passkey", passwordAccounts = [];
   let deliveryKeys = [], previewUrls = [];
   let controllerSequence = 0, controllers = [], firmwareImages = [];
+  let diagnosticsSequence = 0, diagnosticsDevice = null;
   const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, persistentStorage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
   function icon(name) {
@@ -326,6 +350,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   function resetPrivate() {
     historySequence++; accountSequence++;
     controllerSequence++; controllers = []; firmwareImages = [];
+    clearDiagnostics();
     if ($("controllers-view")) {
       $("controllers-view").hidden = true;
       for (const id of ["controllers", "wifi-controller", "firmware-controller", "controller-firmware"]) $(id).replaceChildren();
@@ -631,6 +656,38 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     return item;
   }
   function controllerLabel(item) { return `${item.gate_id} · ${item.device_id} · ${item.target}`; }
+  function clearDiagnostics() {
+    diagnosticsSequence++; diagnosticsDevice = null;
+    if (!$("controller-diagnostics")) return;
+    $("controller-diagnostics").hidden = true;
+    $("controller-diagnostics-summary").replaceChildren(); $("controller-diagnostics-events").replaceChildren();
+    $("controller-diagnostics-status").textContent = "";
+  }
+  function uptime(milliseconds) { const seconds = Math.floor(milliseconds / 1000); return `${Math.floor(seconds / 3600)} ч ${Math.floor(seconds % 3600 / 60)} мин ${seconds % 60} с`; }
+  async function loadDiagnostics(deviceId) {
+    if (client.state.principal?.role !== "owner" || !controllers.some((item) => item.device_id === deviceId)) return;
+    const sequence = ++diagnosticsSequence; diagnosticsDevice = deviceId;
+    $("controller-diagnostics").hidden = false; $("controller-diagnostics-title").textContent = `Диагностика · ${deviceId}`;
+    $("controller-diagnostics-summary").replaceChildren(); $("controller-diagnostics-events").replaceChildren();
+    $("controller-diagnostics-empty").hidden = true; $("controller-diagnostics-status").textContent = "Получение последнего снимка…";
+    let data;
+    try { data = controllerDiagnostics(await client.request(`api/controllers/diagnostics?device_id=${encodeURIComponent(deviceId)}`), deviceId); }
+    catch (error) { if (sequence === diagnosticsSequence) $("controller-diagnostics-status").textContent = "Не удалось получить данные. Повторите обновление."; throw error; }
+    if (sequence !== diagnosticsSequence || client.state.principal?.role !== "owner") return;
+    if (!data.snapshot) { $("controller-diagnostics-status").textContent = "Диагностика ещё не поступала. Эта прошивка может не поддерживать её передачу."; return; }
+    const s = data.snapshot, stale = (now ? now() : Date.now()) / 1000 - data.last_received > 120;
+    $("controller-diagnostics-status").textContent = `${stale ? "Данные старше двух минут. Текущее состояние неизвестно. " : "Данные на момент последней передачи. "}Получено сервером: ${date(data.last_received)}.`;
+    const lastHttps = data.events.filter((event) => event.boot_id === s.boot_id && event.stage !== "wifi").slice(-1)[0];
+    const facts = [ ["Прошивка", s.firmware], ["Wi-Fi", s.wifi_connected ? "Подключён" : "Отключён"], ["Сигнал Wi-Fi", s.wifi_rssi === null ? "Нет данных" : `${s.wifi_rssi} dBm`], ["Последний запрос HTTPS", lastHttps ? `${diagnosticStages[lastHttps.stage]}: ${diagnosticCodes[lastHttps.code]} · после запуска ${uptime(lastHttps.uptime_ms)}` : "Нет данных"], ["Время подтверждено", s.trusted_time ? "Да" : "Нет"], ["Сохранённый доступ", `${s.registry_count} записей · ${s.registry_valid ? "проверен" : "не подтверждён"}`], ["Свободная память", `${s.free_heap} байт · минимум ${s.min_heap} байт`], ["После запуска", uptime(s.uptime_ms)], ["Запуск", s.boot_id], ["Событий не сохранено", String(s.dropped_events)] ];
+    for (const [name, value] of facts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", value));
+    $("controller-diagnostics-summary").append(el("dt", "Причина перезапуска (код)"), el("dd", String(s.reset_reason)));
+    for (const event of data.events) {
+      const row = el("tr");
+      for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
+      $("controller-diagnostics-events").append(row);
+    }
+    $("controller-diagnostics-empty").hidden = data.events.length !== 0;
+  }
   function updateFirmwareChoices() {
     const selected = controllers.find((item) => item.device_id === $("firmware-controller").value);
     $("controller-firmware").replaceChildren();
@@ -653,6 +710,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     for (const item of controllers) {
       const row = el("tr");
       for (const value of [item.device_id, item.gate_id, item.target || "Не определена", item.version || "—", item.last_seen ? date(item.last_seen) : "Нет связи", statuses[item.management_status] || "Нет задания"]) row.append(el("td", value));
+      const diagnostics = el("td"); diagnostics.append(iconButton("view", `Диагностика контроллера ${item.device_id}`, () => run(() => loadDiagnostics(item.device_id)))); row.append(diagnostics);
       $("controllers").append(row);
     }
     for (const id of ["wifi-controller", "firmware-controller"]) {
@@ -681,6 +739,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     message("Обновление поставлено в очередь. Обновите список, чтобы проверить результат."); await loadControllers();
   }
   function selectView(name) {
+    if (name !== "controllers") clearDiagnostics();
     if (name !== "controllers" && $("controller-password")) $("controller-password").value = "";
     for (const view of ["keys", "accounts", "controllers"]) {
       if (!$("tab-" + view)) continue;
@@ -709,6 +768,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   });
   $("tab-controllers")?.addEventListener("click", () => { if (client.state.principal?.role !== "owner") return; selectView("controllers"); run(loadControllers); });
   $("refresh-controllers")?.addEventListener("click", () => run(loadControllers));
+  $("refresh-diagnostics")?.addEventListener("click", () => { if (diagnosticsDevice) run(() => loadDiagnostics(diagnosticsDevice)); });
   $("firmware-controller")?.addEventListener("change", updateFirmwareChoices);
   $("controller-wifi-form")?.addEventListener("submit", (event) => { event.preventDefault(); run(changeControllerWifi, { mutation: true }); });
   $("controller-firmware-form")?.addEventListener("submit", (event) => { event.preventDefault(); run(changeControllerFirmware, { mutation: true }); });
