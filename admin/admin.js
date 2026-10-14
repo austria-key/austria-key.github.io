@@ -10,7 +10,7 @@ const icons = {
 };
 const labels = { pending: "Не использован", active: "Активирован", revoked: "Отозван" };
 const diagnosticStages = { wifi: "Wi-Fi", ble: "Bluetooth", activation: "Активация", registry: "Синхронизация доступа", identity: "Проверка контроллера" };
-const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Соединение разорвано", connected: "Соединение установлено", advertising_failed: "Ошибка объявления Bluetooth", advertising_restarted: "Объявление Bluetooth возобновлено", idle_timeout: "Соединение закрыто из-за бездействия", state_recovered: "Состояние Bluetooth восстановлено" };
+const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Соединение разорвано", connected: "Соединение установлено", advertising_failed: "Ошибка объявления Bluetooth", advertising_restarted: "Объявление Bluetooth возобновлено", idle_timeout: "Соединение закрыто из-за бездействия", state_recovered: "Состояние Bluetooth восстановлено", hello: "Запрос соединения получен", command_received: "Команда открытия получена", result_ready: "Ответ на команду подготовлен", relay_pulse: "Сигнал открытия подан на реле" };
 const errorLabels = {
   PASSKEY_REQUIRED: "Сеанс завершён. Войдите снова.",
   PASSWORD_INVALID: "Неверный пароль или парольный вход недоступен для этого администратора.",
@@ -74,6 +74,15 @@ export function controllerDiagnostics(value, deviceId) {
       if (!Object.hasOwn(s, field)) continue;
       const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : ["ble_peers", "ble_peers_peak"].includes(field) ? integer(s[field], 0, 4) : s[field] === null || integer(s[field], 0, s.uptime_ms);
       if (!valid) throw new ApiError("INVALID_RESPONSE");
+      snapshot[field] = s[field];
+    }
+    if (Object.hasOwn(s, "ble_address")) {
+      if (typeof s.ble_address !== "string" || !/^[a-f0-9]{12}$/.test(s.ble_address) || ["000000000000", "ffffffffffff"].includes(s.ble_address) || (parseInt(s.ble_address.slice(0, 2), 16) & 1)) throw new ApiError("INVALID_RESPONSE");
+      snapshot.ble_address = s.ble_address;
+    }
+    for (const field of ["ble_service_handle", "ble_command_handle", "ble_challenge_handle", "ble_result_handle"]) {
+      if (!Object.hasOwn(s, field)) continue;
+      if (!integer(s[field], 1, 65535)) throw new ApiError("INVALID_RESPONSE");
       snapshot[field] = s[field];
     }
   } else if (value.last_received !== null) throw new ApiError("INVALID_RESPONSE");
@@ -692,6 +701,11 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const bleFacts = [ ["Соединений Bluetooth", s.ble_peers ?? "Нет данных"], ["Объявление Bluetooth", s.ble_advertising === undefined ? "Нет данных" : s.ble_advertising ? "Включено" : "Выключено"], ["Возраст соединения Bluetooth", s.ble_connection_ms == null ? "Нет данных" : uptime(s.ble_connection_ms)], ["Без обмена данными Bluetooth", s.ble_idle_ms == null ? "Нет данных" : uptime(s.ble_idle_ms)], ["Последнее подключение Bluetooth", lastConnect ? `${uptime(s.uptime_ms - lastConnect.uptime_ms)} до снимка · после запуска ${uptime(lastConnect.uptime_ms)}` : "Нет события в сохранённой истории этого запуска"] ];
     for (const [name, value] of bleFacts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", String(value)));
     $("controller-diagnostics-summary").append(el("dt", "Максимум соединений за запуск"), el("dd", String(s.ble_peers_peak ?? "Нет данных")));
+    $("controller-diagnostics-summary").append(el("dt", "Bluetooth-адрес контроллера"), el("dd", s.ble_address ? s.ble_address.match(/../g).join(":").toUpperCase() : "Нет данных"));
+    const legacyStructure = { ble_service_handle: 10, ble_command_handle: 12, ble_challenge_handle: 14, ble_result_handle: 16 };
+    const structureReported = Object.keys(legacyStructure).every((field) => Object.hasOwn(s, field));
+    const structureCompatible = structureReported && Object.entries(legacyStructure).every(([field, value]) => s[field] === value);
+    $("controller-diagnostics-summary").append(el("dt", "Проверка структуры Bluetooth"), el("dd", !structureReported ? "Нет данных" : structureCompatible ? "Структура Bluetooth совместима" : "Структура Bluetooth отличается от прежней"));
     for (const event of data.events) {
       const row = el("tr");
       for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
