@@ -1,4 +1,4 @@
-import { createAdminApp } from "./admin.js?v=20261013-login-message1";
+import { createAdminApp } from "./admin.js?v=20261013-login-message1-management1";
 
 if (window.self !== window.top) {
   document.body.replaceChildren(document.createTextNode("Откройте панель администратора в отдельной вкладке."));

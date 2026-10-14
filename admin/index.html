@@ -7,8 +7,8 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src https://a.tlgrm.cx; base-uri 'none'; form-action 'none'; object-src 'none'">
   <title>Австрия Ключ: администратор</title>
-  <link rel="stylesheet" href="admin.css?v=20261013-login-message1">
-  <script type="module" src="entry.js?v=20261013-login-message1"></script>
+  <link rel="stylesheet" href="admin.css?v=20261013-login-message1-management1">
+  <script type="module" src="entry.js?v=20261013-login-message1-management1"></script>
 </head>
 <body>
   <header class="topbar">
@@ -48,7 +48,7 @@
       <div id="registration-result" class="registration-result" hidden></div>
     </section>
     <div id="admin-view" hidden>
-      <nav class="tabs" aria-label="Разделы"><button id="tab-keys" class="selected" aria-current="page">Выдачи QR</button><button id="tab-accounts" hidden>Администраторы</button></nav>
+      <nav class="tabs" aria-label="Разделы"><button id="tab-keys" class="selected" aria-current="page">Выдачи QR</button><button id="tab-accounts" hidden>Администраторы</button><button id="tab-controllers" hidden>Контроллеры</button></nav>
       <div id="keys-view">
         <section>
           <h2>Выдать доступ</h2>
@@ -75,6 +75,30 @@
           <p id="requests-empty" class="empty" hidden>Ожидающих запросов нет.</p>
         </section>
         <section><h2>Администраторы и Passkey</h2><div id="principals" class="principal-list"></div><p id="principals-empty" class="empty" hidden>Администраторов нет.</p></section>
+      </div>
+      <div id="controllers-view" hidden>
+        <section>
+          <div class="section-heading"><h2>Контроллеры</h2><button id="refresh-controllers" class="icon-button" title="Обновить контроллеры" aria-label="Обновить контроллеры"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button></div>
+          <div class="table-wrap"><table><thead><tr><th>Контроллер</th><th>Калитка</th><th>Модель</th><th>Прошивка</th><th>Последняя связь</th><th>Обновление</th></tr></thead><tbody id="controllers"></tbody></table></div>
+          <p id="controllers-empty" class="empty" hidden>Контроллеров с поддержкой удалённого управления пока нет.</p>
+        </section>
+        <section>
+          <h2>Изменить Wi-Fi</h2>
+          <form id="controller-wifi-form" class="form-grid" autocomplete="off">
+            <label>Контроллер<select id="wifi-controller" required></select></label>
+            <label>Имя новой сети<input id="controller-ssid" maxlength="32" autocomplete="off" required></label>
+            <label>Пароль новой сети<input id="controller-password" type="password" maxlength="63" autocomplete="new-password"></label>
+            <div class="actions full"><button id="controller-wifi-submit" type="submit" class="primary">Изменить Wi-Fi</button></div>
+          </form>
+        </section>
+        <section>
+          <h2>Обновить прошивку</h2>
+          <form id="controller-firmware-form" class="form-grid">
+            <label>Контроллер<select id="firmware-controller" required></select></label>
+            <label>Версия прошивки<select id="controller-firmware" required></select></label>
+            <div class="actions full"><button id="controller-firmware-submit" type="submit" class="primary">Обновить прошивку</button></div>
+          </form>
+        </section>
       </div>
     </div>
   </main>

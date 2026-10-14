@@ -36,6 +36,19 @@ const errorLabels = {
   TRY_LATER: "Слишком много запросов. Повторите позже.",
   SESSION_CHANGED: "Сеанс изменился. Повторите действие после входа.",
   INVALID_RESPONSE: "Сервер вернул некорректный ответ. Повторите соединение.",
+  MANAGEMENT_DISABLED: "Удалённое управление пока не включено на сервере.",
+  CONTROLLER_UNKNOWN: "Контроллер больше не доступен. Обновите список.",
+  FIRMWARE_UNKNOWN: "Эта прошивка недоступна. Обновите список.",
+  FIRMWARE_TARGET_MISMATCH: "Прошивка не подходит для выбранной модели контроллера.",
+  WIFI_INVALID: "Проверьте имя сети и пароль Wi-Fi.",
+  INVALID_WIFI: "Проверьте имя сети и пароль Wi-Fi.",
+  INVALID_WIFI_PASSWORD: "Проверьте пароль новой сети Wi-Fi.",
+  INVALID_WIFI_SSID: "Проверьте имя новой сети Wi-Fi.",
+  CONTROLLER_NOT_REGISTERED: "Контроллер не зарегистрирован. Обновите список.",
+  CONTROLLER_COMMAND_PENDING: "У контроллера уже есть незавершённое задание. Дождитесь результата и обновите список.",
+  CONTROLLER_GATE_MISMATCH: "Контроллер зарегистрирован для другой калитки. Обновите список.",
+  FIRMWARE_NOT_STAGED: "Прошивка больше не доступна. Обновите список.",
+  FIRMWARE_VERSION_MISMATCH: "Версия прошивки изменилась. Обновите список.",
 };
 
 export class ApiError extends Error {
@@ -274,6 +287,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   $("login-request-number").value = requestPreference.read();
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false, authMode = "passkey", passwordAccounts = [];
   let deliveryKeys = [], previewUrls = [];
+  let controllerSequence = 0, controllers = [], firmwareImages = [];
   const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, persistentStorage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
   function icon(name) {
@@ -300,13 +314,24 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     $("logout").hidden = !authenticated; $("extra-passkey").hidden = !authenticated; $("identity").hidden = !authenticated;
     $("identity").textContent = authenticated ? `${principal.name} · ${principal.role === "owner" ? "Владелец" : "Администратор"}` : "";
     $("tab-accounts").hidden = !authenticated || principal.role !== "owner";
+    if ($("tab-controllers")) $("tab-controllers").hidden = !authenticated || principal.role !== "owner";
     for (const id of ["login", "show-register", "extra-passkey", "register", "issue", "logout"]) $(id).disabled = busy || !client.available;
     for (const id of ["auth-passkey", "auth-password", "password-account", "password", "remember-password"]) $(id).disabled = busy;
     $("password-login").disabled = busy || !client.available || !passwordAccounts.some((account) => account.id === $("password-account").value && account.password_enabled);
     doc.querySelectorAll("#history button, #requests button, #requests select, #principals button, #batch-result button").forEach((node) => { node.disabled = busy || !authenticated; });
+    doc.querySelectorAll("#controllers-view input, #controllers-view select, #controllers-view button").forEach((node) => { node.disabled = busy || !authenticated || principal?.role !== "owner"; });
+    if ($("controller-wifi-submit")) $("controller-wifi-submit").disabled ||= !controllers.length;
+    if ($("controller-firmware-submit")) $("controller-firmware-submit").disabled ||= !$("controller-firmware").value;
   }
   function resetPrivate() {
     historySequence++; accountSequence++;
+    controllerSequence++; controllers = []; firmwareImages = [];
+    if ($("controllers-view")) {
+      $("controllers-view").hidden = true;
+      for (const id of ["controllers", "wifi-controller", "firmware-controller", "controller-firmware"]) $(id).replaceChildren();
+      $("controller-wifi-form").reset();
+      $("tab-controllers").classList.remove("selected"); $("tab-controllers").removeAttribute("aria-current");
+    }
     clearDelivery();
     for (const id of ["history", "requests", "principals", "batch-result", "registration-result"]) $(id).replaceChildren();
     $("batch-result").hidden = true; $("registration-result").hidden = true;
@@ -600,6 +625,70 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     }
     updateControls();
   }
+  function selectedController(id) {
+    const item = controllers.find((controller) => controller.device_id === $(id).value);
+    if (!item || client.state.principal?.role !== "owner") throw new ApiError("OWNER_REQUIRED");
+    return item;
+  }
+  function controllerLabel(item) { return `${item.gate_id} · ${item.device_id} · ${item.target}`; }
+  function updateFirmwareChoices() {
+    const selected = controllers.find((item) => item.device_id === $("firmware-controller").value);
+    $("controller-firmware").replaceChildren();
+    for (const image of firmwareImages.filter((item) => item.target === selected?.target)) {
+      const option = el("option", `${image.version} · ${image.target} · ${image.sha256.slice(0, 8)}`); option.value = image.sha256; $("controller-firmware").append(option);
+    }
+    updateControls();
+  }
+  async function loadControllers() {
+    if (client.state.principal?.role !== "owner") return;
+    const sequence = ++controllerSequence;
+    const result = await client.request("api/controllers"), images = await client.request("api/controllers/firmware-list");
+    if (sequence !== controllerSequence || client.state.principal?.role !== "owner") return;
+    if (!Array.isArray(result.controllers) || !Array.isArray(images.firmware) ||
+        result.controllers.some((item) => !/^[a-f0-9]{12}$/.test(item.device_id) || typeof item.gate_id !== "string" || (item.target != null && !["esp32", "esp32s3"].includes(item.target))) ||
+        images.firmware.some((item) => !/^[a-f0-9]{64}$/.test(item.sha256) || typeof item.version !== "string" || typeof item.target !== "string")) throw new ApiError("INVALID_RESPONSE");
+    controllers = result.controllers; firmwareImages = images.firmware;
+    $("controllers").replaceChildren(); $("controllers-empty").hidden = controllers.length > 0;
+    const statuses = { pending: "Ожидает связи", accepted: "Принято контроллером", firmware_booting: "Проверка новой прошивки", firmware_confirmed: "Прошивка обновлена", firmware_failed: "Ошибка прошивки", wifi_confirmed: "Wi-Fi изменён", wifi_rolled_back: "Возврат к прежнему Wi-Fi", expired: "Срок истёк" };
+    for (const item of controllers) {
+      const row = el("tr");
+      for (const value of [item.device_id, item.gate_id, item.target || "Не определена", item.version || "—", item.last_seen ? date(item.last_seen) : "Нет связи", statuses[item.management_status] || "Нет задания"]) row.append(el("td", value));
+      $("controllers").append(row);
+    }
+    for (const id of ["wifi-controller", "firmware-controller"]) {
+      const previous = $(id).value; $(id).replaceChildren();
+      for (const item of controllers.filter((entry) => entry.target != null)) { const option = el("option", controllerLabel(item)); option.value = item.device_id; $(id).append(option); }
+      if (controllers.some((item) => item.device_id === previous)) $(id).value = previous;
+    }
+    updateFirmwareChoices();
+  }
+  async function changeControllerWifi() {
+    const item = selectedController("wifi-controller"), ssid = $("controller-ssid").value, password = $("controller-password").value;
+    const passwordBytes = new TextEncoder().encode(password).length;
+    if (!ssid || ssid.includes("\0") || password.includes("\0") || new TextEncoder().encode(ssid).length > 32 || (passwordBytes > 0 && (passwordBytes < 8 || passwordBytes > 63))) throw new ApiError("WIFI_INVALID");
+    if (!await confirm("Изменить Wi-Fi?", `${controllerLabel(item)}\nНовая сеть: ${ssid}\nЕсли подключение не удастся, контроллер должен вернуться к прежней сети. Задание будет выполнено после связи с сервером.`, "Отправить задание", false)) return;
+    try {
+      await client.request("api/controllers/wifi", { body: { device_id: item.device_id, gate_id: item.gate_id, ssid, password } });
+      message("Изменение Wi-Fi поставлено в очередь. Обновите список, чтобы проверить результат.");
+    } finally { $("controller-password").value = ""; }
+    await loadControllers();
+  }
+  async function changeControllerFirmware() {
+    const item = selectedController("firmware-controller"), image = firmwareImages.find((entry) => entry.sha256 === $("controller-firmware").value && entry.target === item.target);
+    if (!image) throw new ApiError("FIRMWARE_TARGET_MISMATCH");
+    if (!await confirm("Обновить прошивку?", `${controllerLabel(item)}\nТекущая версия: ${item.version || "неизвестна"}\nНовая версия: ${image.version}\nМодель: ${image.target}\nВо время установки контроллер перезапустится и будет временно недоступен.`, "Отправить задание", false)) return;
+    await client.request("api/controllers/firmware", { body: { device_id: item.device_id, gate_id: item.gate_id, sha256: image.sha256, version: image.version } });
+    message("Обновление поставлено в очередь. Обновите список, чтобы проверить результат."); await loadControllers();
+  }
+  function selectView(name) {
+    if (name !== "controllers" && $("controller-password")) $("controller-password").value = "";
+    for (const view of ["keys", "accounts", "controllers"]) {
+      if (!$("tab-" + view)) continue;
+      $(view + "-view").hidden = view !== name;
+      $("tab-" + view).classList.toggle("selected", view === name);
+      if (view === name) $("tab-" + view).setAttribute("aria-current", "page"); else $("tab-" + view).removeAttribute("aria-current");
+    }
+  }
   $("login").addEventListener("click", () => run(login));
   $("auth-passkey").addEventListener("click", () => setAuthMode("passkey"));
   $("auth-password").addEventListener("click", () => setAuthMode("password"));
@@ -613,11 +702,16 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   $("filter-form").addEventListener("submit", (event) => { event.preventDefault(); run(loadHistory); });
   $("refresh-history").addEventListener("click", () => run(loadHistory)); $("refresh-accounts").addEventListener("click", () => run(loadAccounts));
   $("retry-session").addEventListener("click", () => run(() => connect()));
-  $("tab-keys").addEventListener("click", () => { $("keys-view").hidden = false; $("accounts-view").hidden = true; $("tab-keys").classList.add("selected"); $("tab-accounts").classList.remove("selected"); $("tab-keys").setAttribute("aria-current", "page"); $("tab-accounts").removeAttribute("aria-current"); });
+  $("tab-keys").addEventListener("click", () => selectView("keys"));
   $("tab-accounts").addEventListener("click", () => {
     if (client.state.principal?.role !== "owner") return;
-    $("keys-view").hidden = true; $("accounts-view").hidden = false; $("tab-keys").classList.remove("selected"); $("tab-accounts").classList.add("selected"); $("tab-accounts").setAttribute("aria-current", "page"); $("tab-keys").removeAttribute("aria-current"); run(loadAccounts);
+    selectView("accounts"); run(loadAccounts);
   });
+  $("tab-controllers")?.addEventListener("click", () => { if (client.state.principal?.role !== "owner") return; selectView("controllers"); run(loadControllers); });
+  $("refresh-controllers")?.addEventListener("click", () => run(loadControllers));
+  $("firmware-controller")?.addEventListener("change", updateFirmwareChoices);
+  $("controller-wifi-form")?.addEventListener("submit", (event) => { event.preventDefault(); run(changeControllerWifi, { mutation: true }); });
+  $("controller-firmware-form")?.addEventListener("submit", (event) => { event.preventDefault(); run(changeControllerFirmware, { mutation: true }); });
   $("logout").addEventListener("click", () => run(async () => {
     try { await client.request("logout", { body: {} }); }
     finally { client.clear(); resetPrivate(); message("Вы вышли из панели."); await connect(false); }
