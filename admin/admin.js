@@ -369,7 +369,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false, authMode = "passkey", passwordAccounts = [];
   let deliveryKeys = [], previewUrls = [];
   let controllerSequence = 0, controllers = [], firmwareImages = [];
-  let openingsSequence = 0, openingsCursor = null, openingIds = new Set();
+  let openingsSequence = 0, openingsCursor = null, openingIds = new Set(), openingsApartment = "";
   let diagnosticsSequence = 0, diagnosticsDevice = null;
   const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, persistentStorage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
@@ -406,14 +406,15 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     doc.querySelectorAll("#controllers-view input, #controllers-view select, #controllers-view button").forEach((node) => { node.disabled = busy || !authenticated || principal?.role !== "owner"; });
     if ($("controller-wifi-submit")) $("controller-wifi-submit").disabled ||= !controllers.length;
     if ($("controller-firmware-submit")) $("controller-firmware-submit").disabled ||= !$("controller-firmware").value;
-    for (const id of ["refresh-openings", "more-openings"]) if ($(id)) $(id).disabled = busy || !authenticated || principal?.role !== "owner";
+    for (const id of ["refresh-openings", "more-openings", "filter-openings", "openings-apartment"]) if ($(id)) $(id).disabled = busy || !authenticated || principal?.role !== "owner";
   }
   function resetPrivate() {
     historySequence++; accountSequence++;
-    openingsSequence++; openingsCursor = null; openingIds = new Set();
+    openingsSequence++; openingsCursor = null; openingIds = new Set(); openingsApartment = "";
     if ($("openings-view")) {
       $("openings-view").hidden = true; $("openings").replaceChildren(); $("more-openings").hidden = true; $("openings-empty").hidden = true;
       $("openings-status").textContent = ""; $("tab-openings").classList.remove("selected"); $("tab-openings").removeAttribute("aria-current");
+      $("openings-apartment").value = "";
     }
     controllerSequence++; controllers = []; firmwareImages = [];
     clearDiagnostics();
@@ -827,10 +828,10 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (!more) { openingIds = new Set(); openingsCursor = null; $("openings").replaceChildren(); $("more-openings").hidden = true; }
     $("openings-empty").hidden = true; $("openings-status").textContent = "Загрузка…";
     let result;
-    try { result = openingJournal(await client.request(`api/openings?limit=100${cursor === null ? "" : `&before_id=${cursor}`}`)); }
+    try { result = openingJournal(await client.request(`api/openings?limit=100${cursor === null ? "" : `&before_id=${cursor}`}${openingsApartment ? `&apartment=${encodeURIComponent(openingsApartment)}` : ""}`)); }
     catch (error) { if (sequence === openingsSequence) $("openings-status").textContent = "Не удалось загрузить журнал. Повторите обновление."; throw error; }
     if (sequence !== openingsSequence || client.state.principal?.role !== "owner" || destroyed) return;
-    if (cursor !== null && result.entries.some((entry) => entry.id >= cursor)) { $("openings-status").textContent = "Не удалось загрузить журнал. Повторите обновление."; throw new ApiError("INVALID_RESPONSE"); }
+    if (result.entries.some((entry) => (cursor !== null && entry.id >= cursor) || (openingsApartment && entry.apartment !== openingsApartment))) { $("openings-status").textContent = "Не удалось загрузить журнал. Повторите обновление."; throw new ApiError("INVALID_RESPONSE"); }
     for (const entry of result.entries) {
       if (openingIds.has(entry.id)) continue;
       openingIds.add(entry.id); const row = el("tr");
@@ -888,6 +889,17 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   });
   $("tab-controllers")?.addEventListener("click", () => { if (client.state.principal?.role !== "owner") return; selectView("controllers"); run(loadControllers); });
   $("tab-openings")?.addEventListener("click", () => { if (client.state.principal?.role !== "owner" || busy) return; selectView("openings"); run(() => loadOpenings()); });
+  $("openings-filter-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    run(() => {
+      if (client.state.principal?.role !== "owner") return;
+      const apartment = $("openings-apartment").value.trim();
+      if (apartment && !/^[0-9]{1,5}(?:\/[0-9]{1,5})?$/.test(apartment)) throw new ApiError("INVALID_APARTMENT");
+      openingsApartment = apartment; $("openings-apartment").value = apartment;
+      message("");
+      return loadOpenings();
+    });
+  });
   $("refresh-openings")?.addEventListener("click", () => run(() => loadOpenings()));
   $("more-openings")?.addEventListener("click", () => run(() => loadOpenings(true)));
   $("refresh-controllers")?.addEventListener("click", () => run(loadControllers));

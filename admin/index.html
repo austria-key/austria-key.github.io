@@ -7,8 +7,8 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src https://a.tlgrm.cx; base-uri 'none'; form-action 'none'; object-src 'none'">
   <title>Австрия Ключ: администратор</title>
-  <link rel="stylesheet" href="admin.css?v=20261014-openings1">
-  <script type="module" src="entry.js?v=20261014-openings1"></script>
+  <link rel="stylesheet" href="admin.css?v=20261014-openings-filter1">
+  <script type="module" src="entry.js?v=20261014-openings-filter1"></script>
 </head>
 <body>
   <header class="topbar">
@@ -79,6 +79,7 @@
       <div id="openings-view" hidden>
         <section>
           <div class="section-heading"><h2>Журнал открытий</h2><button id="refresh-openings" class="icon-button" title="Обновить журнал открытий" aria-label="Обновить журнал открытий"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/></svg></button></div>
+          <form id="openings-filter-form" class="filters"><label>Квартира<input id="openings-apartment" placeholder="Все квартиры" maxlength="11" autocomplete="off"></label><button id="filter-openings" type="submit">Показать</button></form>
           <p id="openings-status" role="status" aria-live="polite"></p>
           <div class="table-wrap"><table class="opening-table"><thead><tr><th>Время события (МСК)</th><th>Квартира</th><th>QR №</th></tr></thead><tbody id="openings"></tbody></table></div>
           <p id="openings-empty" class="empty" hidden>Открытий пока нет.</p>
