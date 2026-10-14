@@ -63,6 +63,21 @@ export function diagnosticTime(value) {
   return new Date(value * 1000).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+export function openingJournal(value) {
+  const positive = (number, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(number) && number > 0 && number <= max;
+  if (!value || !Array.isArray(value.entries) || value.entries.length > 100 || (value.next_before_id !== null && !positive(value.next_before_id))) throw new ApiError("INVALID_RESPONSE");
+  let previous = Infinity;
+  const entries = value.entries.map((item) => {
+    if (!item || !positive(item.id) || item.id >= previous || (item.occurred_at !== null && !positive(item.occurred_at, 4102444800)) ||
+        (item.apartment !== null && (typeof item.apartment !== "string" || !/^[0-9]{1,5}(?:\/[0-9]{1,5})?$/.test(item.apartment))) ||
+        (item.qr_number !== null && !positive(item.qr_number))) throw new ApiError("INVALID_RESPONSE");
+    previous = item.id;
+    return { id: item.id, occurred_at: item.occurred_at, apartment: item.apartment, qr_number: item.qr_number };
+  });
+  if (value.next_before_id !== null && (!entries.length || value.next_before_id !== entries[entries.length - 1].id)) throw new ApiError("INVALID_RESPONSE");
+  return { entries, next_before_id: value.next_before_id };
+}
+
 export function controllerDiagnostics(value, deviceId) {
   const integer = (number, min = 0, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(number) && number >= min && number <= max;
   const boot = (id) => typeof id === "string" && /^[a-f0-9]{16}$/.test(id);
@@ -354,6 +369,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   let busy = false, historySequence = 0, accountSequence = 0, destroyed = false, authMode = "passkey", passwordAccounts = [];
   let deliveryKeys = [], previewUrls = [];
   let controllerSequence = 0, controllers = [], firmwareImages = [];
+  let openingsSequence = 0, openingsCursor = null, openingIds = new Set();
   let diagnosticsSequence = 0, diagnosticsDevice = null;
   const client = new SessionClient({ apiBase, fetchImpl, timer, now, storage, persistentStorage, onExpired: (error) => { resetPrivate(); message(errorText(error), true); connect(false); } });
   const el = (tag, value, className) => { const node = doc.createElement(tag); if (value != null) node.textContent = value; if (className) node.className = className; return node; };
@@ -382,6 +398,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     $("identity").textContent = authenticated ? `${principal.name} · ${principal.role === "owner" ? "Владелец" : "Администратор"}` : "";
     $("tab-accounts").hidden = !authenticated || principal.role !== "owner";
     if ($("tab-controllers")) $("tab-controllers").hidden = !authenticated || principal.role !== "owner";
+    if ($("tab-openings")) $("tab-openings").hidden = !authenticated || principal.role !== "owner";
     for (const id of ["login", "show-register", "extra-passkey", "register", "issue", "logout"]) $(id).disabled = busy || !client.available;
     for (const id of ["auth-passkey", "auth-password", "password-account", "password", "remember-password"]) $(id).disabled = busy;
     $("password-login").disabled = busy || !client.available || !passwordAccounts.some((account) => account.id === $("password-account").value && account.password_enabled);
@@ -389,9 +406,15 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     doc.querySelectorAll("#controllers-view input, #controllers-view select, #controllers-view button").forEach((node) => { node.disabled = busy || !authenticated || principal?.role !== "owner"; });
     if ($("controller-wifi-submit")) $("controller-wifi-submit").disabled ||= !controllers.length;
     if ($("controller-firmware-submit")) $("controller-firmware-submit").disabled ||= !$("controller-firmware").value;
+    for (const id of ["refresh-openings", "more-openings"]) if ($(id)) $(id).disabled = busy || !authenticated || principal?.role !== "owner";
   }
   function resetPrivate() {
     historySequence++; accountSequence++;
+    openingsSequence++; openingsCursor = null; openingIds = new Set();
+    if ($("openings-view")) {
+      $("openings-view").hidden = true; $("openings").replaceChildren(); $("more-openings").hidden = true; $("openings-empty").hidden = true;
+      $("openings-status").textContent = ""; $("tab-openings").classList.remove("selected"); $("tab-openings").removeAttribute("aria-current");
+    }
     controllerSequence++; controllers = []; firmwareImages = [];
     clearDiagnostics();
     if ($("controllers-view")) {
@@ -798,6 +821,25 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     message(messages[result.status]);
     await loadControllers();
   }
+  async function loadOpenings(more = false) {
+    if (!client.state.authenticated || client.state.principal?.role !== "owner" || (more && openingsCursor === null)) return;
+    const sequence = ++openingsSequence, cursor = more ? openingsCursor : null;
+    if (!more) { openingIds = new Set(); openingsCursor = null; $("openings").replaceChildren(); $("more-openings").hidden = true; }
+    $("openings-empty").hidden = true; $("openings-status").textContent = "Загрузка…";
+    let result;
+    try { result = openingJournal(await client.request(`api/openings?limit=100${cursor === null ? "" : `&before_id=${cursor}`}`)); }
+    catch (error) { if (sequence === openingsSequence) $("openings-status").textContent = "Не удалось загрузить журнал. Повторите обновление."; throw error; }
+    if (sequence !== openingsSequence || client.state.principal?.role !== "owner" || destroyed) return;
+    if (cursor !== null && result.entries.some((entry) => entry.id >= cursor)) { $("openings-status").textContent = "Не удалось загрузить журнал. Повторите обновление."; throw new ApiError("INVALID_RESPONSE"); }
+    for (const entry of result.entries) {
+      if (openingIds.has(entry.id)) continue;
+      openingIds.add(entry.id); const row = el("tr");
+      for (const value of [entry.occurred_at === null ? "Неизвестно" : diagnosticTime(entry.occurred_at), entry.apartment ?? "—", entry.qr_number === null ? "—" : String(entry.qr_number)]) row.append(el("td", value));
+      $("openings").append(row);
+    }
+    openingsCursor = result.next_before_id; $("more-openings").hidden = openingsCursor === null;
+    $("openings-empty").hidden = openingIds.size !== 0; $("openings-status").textContent = "";
+  }
   async function changeControllerWifi() {
     const item = selectedController("wifi-controller"), ssid = $("controller-ssid").value, password = $("controller-password").value;
     const passwordBytes = new TextEncoder().encode(password).length;
@@ -819,7 +861,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
   function selectView(name) {
     if (name !== "controllers") clearDiagnostics();
     if (name !== "controllers" && $("controller-password")) $("controller-password").value = "";
-    for (const view of ["keys", "accounts", "controllers"]) {
+    for (const view of ["keys", "accounts", "controllers", "openings"]) {
       if (!$("tab-" + view)) continue;
       $(view + "-view").hidden = view !== name;
       $("tab-" + view).classList.toggle("selected", view === name);
@@ -845,6 +887,9 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     selectView("accounts"); run(loadAccounts);
   });
   $("tab-controllers")?.addEventListener("click", () => { if (client.state.principal?.role !== "owner") return; selectView("controllers"); run(loadControllers); });
+  $("tab-openings")?.addEventListener("click", () => { if (client.state.principal?.role !== "owner" || busy) return; selectView("openings"); run(() => loadOpenings()); });
+  $("refresh-openings")?.addEventListener("click", () => run(() => loadOpenings()));
+  $("more-openings")?.addEventListener("click", () => run(() => loadOpenings(true)));
   $("refresh-controllers")?.addEventListener("click", () => run(loadControllers));
   $("refresh-diagnostics")?.addEventListener("click", () => { if (diagnosticsDevice) run(() => loadDiagnostics(diagnosticsDevice)); });
   $("firmware-controller")?.addEventListener("change", updateFirmwareChoices);
