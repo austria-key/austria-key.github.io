@@ -8,8 +8,8 @@ const icons = {
   approve: ["m20 6-11 11-5-5"], reject: ["m18 6-12 12", "M6 6l12 12"],
 };
 const labels = { pending: "Не использован", active: "Активирован", revoked: "Отозван" };
-const diagnosticStages = { wifi: "Wi-Fi", activation: "Активация", registry: "Синхронизация доступа", identity: "Проверка контроллера" };
-const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Wi-Fi отключён" };
+const diagnosticStages = { wifi: "Wi-Fi", ble: "Bluetooth", activation: "Активация", registry: "Синхронизация доступа", identity: "Проверка контроллера" };
+const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Соединение разорвано", connected: "Соединение установлено", advertising_failed: "Ошибка объявления Bluetooth", advertising_restarted: "Объявление Bluetooth возобновлено", idle_timeout: "Соединение закрыто из-за бездействия", state_recovered: "Состояние Bluetooth восстановлено" };
 const errorLabels = {
   PASSKEY_REQUIRED: "Сеанс завершён. Войдите снова.",
   PASSWORD_INVALID: "Неверный пароль или парольный вход недоступен для этого администратора.",
@@ -69,6 +69,12 @@ export function controllerDiagnostics(value, deviceId) {
         (s.wifi_rssi !== null && !integer(s.wifi_rssi, -127, 0)) || ![s.uptime_ms, s.seq, s.dropped_events].every((field) => integer(field)) ||
         ![s.free_heap, s.min_heap].every((field) => integer(field, 0, 64 * 1024 * 1024)) || !integer(s.registry_count, 0, 131072) || !integer(s.reset_reason, 0, 32) || value.last_received === null) throw new ApiError("INVALID_RESPONSE");
     snapshot = { boot_id: s.boot_id, firmware: s.firmware, wifi_rssi: s.wifi_rssi, wifi_connected: s.wifi_connected, trusted_time: s.trusted_time, registry_valid: s.registry_valid, registry_count: s.registry_count, uptime_ms: s.uptime_ms, seq: s.seq, dropped_events: s.dropped_events, free_heap: s.free_heap, min_heap: s.min_heap, reset_reason: s.reset_reason };
+    for (const field of ["ble_peers", "ble_advertising", "ble_idle_ms", "ble_connection_ms"]) {
+      if (!Object.hasOwn(s, field)) continue;
+      const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : field === "ble_peers" ? integer(s[field], 0, 3) : s[field] === null || integer(s[field], 0, s.uptime_ms);
+      if (!valid) throw new ApiError("INVALID_RESPONSE");
+      snapshot[field] = s[field];
+    }
   } else if (value.last_received !== null) throw new ApiError("INVALID_RESPONSE");
   const events = value.events.map((e) => {
     if (!e || !boot(e.boot_id) || !integer(e.seq, 1) || !integer(e.uptime_ms) || !Object.hasOwn(diagnosticStages, e.stage) || !Object.hasOwn(diagnosticCodes, e.code) ||
@@ -677,10 +683,13 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     if (!data.snapshot) { $("controller-diagnostics-status").textContent = "Диагностика ещё не поступала. Эта прошивка может не поддерживать её передачу."; return; }
     const s = data.snapshot, stale = (now ? now() : Date.now()) / 1000 - data.last_received > 120;
     $("controller-diagnostics-status").textContent = `${stale ? "Данные старше двух минут. Текущее состояние неизвестно. " : "Данные на момент последней передачи. "}Получено сервером: ${date(data.last_received)}.`;
-    const lastHttps = data.events.filter((event) => event.boot_id === s.boot_id && event.stage !== "wifi").slice(-1)[0];
+    const lastHttps = data.events.filter((event) => event.boot_id === s.boot_id && ["activation", "registry", "identity"].includes(event.stage)).slice(-1)[0];
     const facts = [ ["Прошивка", s.firmware], ["Wi-Fi", s.wifi_connected ? "Подключён" : "Отключён"], ["Сигнал Wi-Fi", s.wifi_rssi === null ? "Нет данных" : `${s.wifi_rssi} dBm`], ["Последний запрос HTTPS", lastHttps ? `${diagnosticStages[lastHttps.stage]}: ${diagnosticCodes[lastHttps.code]} · после запуска ${uptime(lastHttps.uptime_ms)}` : "Нет данных"], ["Время подтверждено", s.trusted_time ? "Да" : "Нет"], ["Сохранённый доступ", `${s.registry_count} записей · ${s.registry_valid ? "проверен" : "не подтверждён"}`], ["Свободная память", `${s.free_heap} байт · минимум ${s.min_heap} байт`], ["После запуска", uptime(s.uptime_ms)], ["Запуск", s.boot_id], ["Событий не сохранено", String(s.dropped_events)] ];
     for (const [name, value] of facts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", value));
     $("controller-diagnostics-summary").append(el("dt", "Причина перезапуска (код)"), el("dd", String(s.reset_reason)));
+    const lastConnect = data.events.filter((event) => event.boot_id === s.boot_id && event.stage === "ble" && event.code === "connected" && event.uptime_ms <= s.uptime_ms).slice(-1)[0];
+    const bleFacts = [ ["Соединений Bluetooth", s.ble_peers ?? "Нет данных"], ["Объявление Bluetooth", s.ble_advertising === undefined ? "Нет данных" : s.ble_advertising ? "Включено" : "Выключено"], ["Возраст соединения Bluetooth", s.ble_connection_ms == null ? "Нет данных" : uptime(s.ble_connection_ms)], ["Без обмена данными Bluetooth", s.ble_idle_ms == null ? "Нет данных" : uptime(s.ble_idle_ms)], ["Последнее подключение Bluetooth", lastConnect ? `${uptime(s.uptime_ms - lastConnect.uptime_ms)} до снимка · после запуска ${uptime(lastConnect.uptime_ms)}` : "Нет события в сохранённой истории этого запуска"] ];
+    for (const [name, value] of bleFacts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", String(value)));
     for (const event of data.events) {
       const row = el("tr");
       for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
