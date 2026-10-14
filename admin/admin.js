@@ -69,9 +69,9 @@ export function controllerDiagnostics(value, deviceId) {
         (s.wifi_rssi !== null && !integer(s.wifi_rssi, -127, 0)) || ![s.uptime_ms, s.seq, s.dropped_events].every((field) => integer(field)) ||
         ![s.free_heap, s.min_heap].every((field) => integer(field, 0, 64 * 1024 * 1024)) || !integer(s.registry_count, 0, 131072) || !integer(s.reset_reason, 0, 32) || value.last_received === null) throw new ApiError("INVALID_RESPONSE");
     snapshot = { boot_id: s.boot_id, firmware: s.firmware, wifi_rssi: s.wifi_rssi, wifi_connected: s.wifi_connected, trusted_time: s.trusted_time, registry_valid: s.registry_valid, registry_count: s.registry_count, uptime_ms: s.uptime_ms, seq: s.seq, dropped_events: s.dropped_events, free_heap: s.free_heap, min_heap: s.min_heap, reset_reason: s.reset_reason };
-    for (const field of ["ble_peers", "ble_advertising", "ble_idle_ms", "ble_connection_ms"]) {
+    for (const field of ["ble_peers", "ble_peers_peak", "ble_advertising", "ble_idle_ms", "ble_connection_ms"]) {
       if (!Object.hasOwn(s, field)) continue;
-      const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : field === "ble_peers" ? integer(s[field], 0, 3) : s[field] === null || integer(s[field], 0, s.uptime_ms);
+      const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : ["ble_peers", "ble_peers_peak"].includes(field) ? integer(s[field], 0, 3) : s[field] === null || integer(s[field], 0, s.uptime_ms);
       if (!valid) throw new ApiError("INVALID_RESPONSE");
       snapshot[field] = s[field];
     }
@@ -690,6 +690,7 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const lastConnect = data.events.filter((event) => event.boot_id === s.boot_id && event.stage === "ble" && event.code === "connected" && event.uptime_ms <= s.uptime_ms).slice(-1)[0];
     const bleFacts = [ ["Соединений Bluetooth", s.ble_peers ?? "Нет данных"], ["Объявление Bluetooth", s.ble_advertising === undefined ? "Нет данных" : s.ble_advertising ? "Включено" : "Выключено"], ["Возраст соединения Bluetooth", s.ble_connection_ms == null ? "Нет данных" : uptime(s.ble_connection_ms)], ["Без обмена данными Bluetooth", s.ble_idle_ms == null ? "Нет данных" : uptime(s.ble_idle_ms)], ["Последнее подключение Bluetooth", lastConnect ? `${uptime(s.uptime_ms - lastConnect.uptime_ms)} до снимка · после запуска ${uptime(lastConnect.uptime_ms)}` : "Нет события в сохранённой истории этого запуска"] ];
     for (const [name, value] of bleFacts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", String(value)));
+    $("controller-diagnostics-summary").append(el("dt", "Максимум соединений за запуск"), el("dd", String(s.ble_peers_peak ?? "Нет данных")));
     for (const event of data.events) {
       const row = el("tr");
       for (const value of [date(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
