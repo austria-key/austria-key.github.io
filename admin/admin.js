@@ -4,6 +4,7 @@ const icons = {
   copy: ["M9 9h13v13H9z", "M5 15H2V2h13v3"],
   share: ["M12 16V3", "m7 8 5-5 5 5", "M5 13v8h14v-8"],
   view: ["M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7", "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6"],
+  reboot: ["M21 12a9 9 0 1 1-2.64-6.36", "M21 3v6h-6"],
   revoke: ["M3 6h18", "M19 6v14H5V6", "M8 6V3h8v3", "M10 10v6M14 10v6"],
   approve: ["m20 6-11 11-5-5"], reject: ["m18 6-12 12", "M6 6l12 12"],
 };
@@ -71,7 +72,7 @@ export function controllerDiagnostics(value, deviceId) {
     snapshot = { boot_id: s.boot_id, firmware: s.firmware, wifi_rssi: s.wifi_rssi, wifi_connected: s.wifi_connected, trusted_time: s.trusted_time, registry_valid: s.registry_valid, registry_count: s.registry_count, uptime_ms: s.uptime_ms, seq: s.seq, dropped_events: s.dropped_events, free_heap: s.free_heap, min_heap: s.min_heap, reset_reason: s.reset_reason };
     for (const field of ["ble_peers", "ble_peers_peak", "ble_advertising", "ble_idle_ms", "ble_connection_ms"]) {
       if (!Object.hasOwn(s, field)) continue;
-      const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : ["ble_peers", "ble_peers_peak"].includes(field) ? integer(s[field], 0, 3) : s[field] === null || integer(s[field], 0, s.uptime_ms);
+      const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : ["ble_peers", "ble_peers_peak"].includes(field) ? integer(s[field], 0, 4) : s[field] === null || integer(s[field], 0, s.uptime_ms);
       if (!valid) throw new ApiError("INVALID_RESPONSE");
       snapshot[field] = s[field];
     }
@@ -716,11 +717,12 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
         images.firmware.some((item) => !/^[a-f0-9]{64}$/.test(item.sha256) || typeof item.version !== "string" || typeof item.target !== "string")) throw new ApiError("INVALID_RESPONSE");
     controllers = result.controllers; firmwareImages = images.firmware;
     $("controllers").replaceChildren(); $("controllers-empty").hidden = controllers.length > 0;
-    const statuses = { pending: "Ожидает связи", accepted: "Принято контроллером", firmware_booting: "Проверка новой прошивки", firmware_confirmed: "Прошивка обновлена", firmware_failed: "Ошибка прошивки", wifi_confirmed: "Wi-Fi изменён", wifi_rolled_back: "Возврат к прежнему Wi-Fi", expired: "Срок истёк" };
+    const statuses = { pending: "Ожидает связи", accepted: "Принято контроллером", firmware_booting: "Проверка новой прошивки", firmware_confirmed: "Прошивка обновлена", firmware_failed: "Ошибка прошивки", wifi_confirmed: "Wi-Fi изменён", wifi_rolled_back: "Возврат к прежнему Wi-Fi", rebooting: "Перезапуск начат", reboot_confirmed: "Перезапуск подтверждён", superseded: "Отменено перезагрузкой", expired: "Срок истёк" };
     for (const item of controllers) {
       const row = el("tr");
       for (const value of [item.device_id, item.gate_id, item.target || "Не определена", item.version || "—", item.last_seen ? date(item.last_seen) : "Нет связи", statuses[item.management_status] || "Нет задания"]) row.append(el("td", value));
       const diagnostics = el("td"); diagnostics.append(iconButton("view", `Диагностика контроллера ${item.device_id}`, () => run(() => loadDiagnostics(item.device_id)))); row.append(diagnostics);
+      const restart = el("td"); restart.append(iconButton("reboot", "Перезагрузить контроллер", () => run(() => rebootController(item.device_id), { mutation: true }))); row.append(restart);
       $("controllers").append(row);
     }
     for (const id of ["wifi-controller", "firmware-controller"]) {
@@ -729,6 +731,19 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
       if (controllers.some((item) => item.device_id === previous)) $(id).value = previous;
     }
     updateFirmwareChoices();
+  }
+  async function rebootController(deviceId) {
+    if (client.state.principal?.role !== "owner") throw new ApiError("OWNER_REQUIRED");
+    const item = controllers.find((controller) => controller.device_id === deviceId);
+    if (!item) throw new ApiError("CONTROLLER_NOT_REGISTERED");
+    const generation = client.generation;
+    if (!await confirm("Перезагрузить контроллер?", `Калитка: ${item.gate_id}\nКонтроллер: ${item.device_id}\nПосле получения задания контроллер перезапустится и будет временно недоступен. Ожидающие передачи изменения Wi-Fi и обновления прошивки будут отменены; история заданий сохранится. Уже переданную или выполняющуюся операцию перезагрузка не прервёт. Настройки Wi-Fi и ключи сохранятся. Эта команда не открывает калитку.`, "Перезагрузить", false)) return;
+    if (client.generation !== generation || client.state.principal?.role !== "owner") throw new ApiError("SESSION_CHANGED");
+    const result = await client.request("api/controllers/reboot", { body: { device_id: item.device_id, gate_id: item.gate_id } });
+    if (result.device_id !== item.device_id || !["pending", "accepted", "rebooting"].includes(result.status) || !Number.isSafeInteger(result.sequence) || result.sequence < 1) throw new ApiError("INVALID_RESPONSE");
+    const messages = { pending: "Перезагрузка поставлена в очередь. Это ещё не подтверждение перезапуска; обновите список, чтобы проверить результат.", accepted: "Задание перезагрузки уже принято контроллером. Обновите список, чтобы проверить результат.", rebooting: "Начало перезапуска подтверждено. Обновите список и дождитесь подтверждения завершения." };
+    message(messages[result.status]);
+    await loadControllers();
   }
   async function changeControllerWifi() {
     const item = selectedController("wifi-controller"), ssid = $("controller-ssid").value, password = $("controller-password").value;
