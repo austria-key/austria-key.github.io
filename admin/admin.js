@@ -10,7 +10,7 @@ const icons = {
 };
 const labels = { pending: "Не использован", active: "Активирован", revoked: "Отозван" };
 const diagnosticStages = { wifi: "Wi-Fi", ble: "Bluetooth", activation: "Активация", registry: "Синхронизация доступа", identity: "Проверка контроллера" };
-const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Соединение разорвано", connected: "Соединение установлено", advertising_failed: "Ошибка объявления Bluetooth", advertising_restarted: "Объявление Bluetooth возобновлено", idle_timeout: "Соединение закрыто из-за бездействия", state_recovered: "Состояние Bluetooth восстановлено", hello: "Запрос соединения получен", command_received: "Команда открытия получена", result_ready: "Ответ на команду подготовлен", relay_pulse: "Сигнал открытия подан на реле" };
+const diagnosticCodes = { prerequisite_wifi: "Нет Wi-Fi", prerequisite_time: "Время не подтверждено", prerequisite_config: "Нет настроек", http_begin: "Не удалось начать HTTPS", transport: "Ошибка соединения", http_status: "Ответ HTTP", body_parse: "Ошибка чтения ответа", sync_failed: "Синхронизация не завершена", success: "Успешно", disconnected: "Соединение разорвано", connected: "Соединение установлено", advertising_failed: "Ошибка объявления Bluetooth", advertising_restarted: "Объявление Bluetooth возобновлено", idle_timeout: "Соединение закрыто из-за бездействия", state_recovered: "Состояние Bluetooth восстановлено", hello: "Запрос соединения получен", command_received: "Команда открытия получена", result_ready: "Ответ на команду подготовлен", relay_pulse: "Сигнал открытия подан на реле", connection_failed: "Ошибка подключения Bluetooth", advertising_refreshed: "Объявление Bluetooth обновлено", host_stalled: "Обработка Bluetooth не отвечает" };
 const crashReasons = { abort: "Программная аварийная остановка", exception: "Исключение", watchdog: "Сторожевой таймер", other: "Другая авария" };
 const errorLabels = {
   PASSKEY_REQUIRED: "Сеанс завершён. Войдите снова.",
@@ -81,7 +81,7 @@ export function openingJournal(value) {
 export function controllerDiagnostics(value, deviceId) {
   const integer = (number, min = 0, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(number) && number >= min && number <= max;
   const boot = (id) => typeof id === "string" && /^[a-f0-9]{16}$/.test(id);
-  if (!value || value.device_id !== deviceId || !/^[a-f0-9]{12}$/.test(deviceId) || typeof value.gate_id !== "string" || !Array.isArray(value.events) || value.events.length > 64 || (value.last_received !== null && !integer(value.last_received))) throw new ApiError("INVALID_RESPONSE");
+  if (!value || value.device_id !== deviceId || !/^[a-f0-9]{12}$/.test(deviceId) || typeof value.gate_id !== "string" || !Array.isArray(value.events) || value.events.length > 128 || (value.last_received !== null && !integer(value.last_received))) throw new ApiError("INVALID_RESPONSE");
   let snapshot = null;
   if (value.snapshot !== null) {
     const s = value.snapshot;
@@ -90,10 +90,20 @@ export function controllerDiagnostics(value, deviceId) {
         (s.wifi_rssi !== null && !integer(s.wifi_rssi, -127, 0)) || ![s.uptime_ms, s.seq, s.dropped_events].every((field) => integer(field)) ||
         ![s.free_heap, s.min_heap].every((field) => integer(field, 0, 64 * 1024 * 1024)) || !integer(s.registry_count, 0, 131072) || !integer(s.reset_reason, 0, 32) || value.last_received === null) throw new ApiError("INVALID_RESPONSE");
     snapshot = { boot_id: s.boot_id, firmware: s.firmware, wifi_rssi: s.wifi_rssi, wifi_connected: s.wifi_connected, trusted_time: s.trusted_time, registry_valid: s.registry_valid, registry_count: s.registry_count, uptime_ms: s.uptime_ms, seq: s.seq, dropped_events: s.dropped_events, free_heap: s.free_heap, min_heap: s.min_heap, reset_reason: s.reset_reason };
-    for (const field of ["ble_peers", "ble_peers_peak", "ble_advertising", "ble_idle_ms", "ble_connection_ms"]) {
+    for (const field of ["ble_peers", "ble_peers_peak", "ble_advertising", "ble_idle_ms", "ble_connection_ms", "ble_host_age_ms", "ble_host_queued", "ble_adv_age_ms"]) {
       if (!Object.hasOwn(s, field)) continue;
-      const valid = field === "ble_advertising" ? typeof s[field] === "boolean" : ["ble_peers", "ble_peers_peak"].includes(field) ? integer(s[field], 0, 4) : s[field] === null || integer(s[field], 0, s.uptime_ms);
+      const valid = ["ble_advertising", "ble_host_queued"].includes(field) ? typeof s[field] === "boolean" : ["ble_peers", "ble_peers_peak"].includes(field) ? integer(s[field], 0, 4) : s[field] === null || integer(s[field], 0, s.uptime_ms);
       if (!valid) throw new ApiError("INVALID_RESPONSE");
+      snapshot[field] = s[field];
+    }
+    for (const field of ["ble_host_runs", "ble_adv_refreshes", "ble_adv_refresh_failures", "ble_connect_failures", "ble_host_stalls", "ble_recovery_restarts"]) {
+      if (!Object.hasOwn(s, field)) continue;
+      if (!integer(s[field], 0, field === "ble_recovery_restarts" ? 3 : 0xffffffff)) throw new ApiError("INVALID_RESPONSE");
+      snapshot[field] = s[field];
+    }
+    for (const field of ["ble_last_connect_status", "ble_last_disconnect_reason"]) {
+      if (!Object.hasOwn(s, field)) continue;
+      if (s[field] !== null && !integer(s[field], 0, 65535)) throw new ApiError("INVALID_RESPONSE");
       snapshot[field] = s[field];
     }
     if (Object.hasOwn(s, "ble_address")) {
@@ -114,6 +124,11 @@ export function controllerDiagnostics(value, deviceId) {
     if (!e || !boot(e.boot_id) || !integer(e.seq, 1) || !integer(e.uptime_ms) || !Object.hasOwn(diagnosticStages, e.stage) || !Object.hasOwn(diagnosticCodes, e.code) ||
         !integer(e.http_status, 0, 599) || (e.http_status > 0 && e.http_status < 100) || !integer(e.tls_error, -2147483648, 2147483647) || !integer(e.wifi_reason, 0, 255) || !integer(e.received_at)) throw new ApiError("INVALID_RESPONSE");
     const event = { boot_id: e.boot_id, seq: e.seq, uptime_ms: e.uptime_ms, stage: e.stage, code: e.code, http_status: e.http_status, tls_error: e.tls_error, wifi_reason: e.wifi_reason, received_at: e.received_at };
+    if (["connection_failed", "advertising_refreshed", "host_stalled"].includes(e.code) && e.stage !== "ble") throw new ApiError("INVALID_RESPONSE");
+    if (Object.hasOwn(e, "ble_reason")) {
+      if (e.stage !== "ble" || !integer(e.ble_reason, 0, 65535)) throw new ApiError("INVALID_RESPONSE");
+      event.ble_reason = e.ble_reason;
+    }
     if (Object.hasOwn(e, "apartment")) {
       if (e.stage !== "ble" || e.code !== "relay_pulse" || typeof e.apartment !== "string" || !/^[0-9]{1,5}(?:\/[0-9]{1,5})?$/.test(e.apartment)) throw new ApiError("INVALID_RESPONSE");
       event.apartment = e.apartment;
@@ -755,6 +770,15 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     const bleFacts = [ ["Соединений Bluetooth", s.ble_peers ?? "Нет данных"], ["Объявление Bluetooth", s.ble_advertising === undefined ? "Нет данных" : s.ble_advertising ? "Включено" : "Выключено"], ["Возраст соединения Bluetooth", s.ble_connection_ms == null ? "Нет данных" : uptime(s.ble_connection_ms)], ["Без обмена данными Bluetooth", s.ble_idle_ms == null ? "Нет данных" : uptime(s.ble_idle_ms)], ["Последнее подключение Bluetooth", lastConnect ? `${uptime(s.uptime_ms - lastConnect.uptime_ms)} до снимка · после запуска ${uptime(lastConnect.uptime_ms)}` : "Нет события в сохранённой истории этого запуска"] ];
     for (const [name, value] of bleFacts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", String(value)));
     $("controller-diagnostics-summary").append(el("dt", "Максимум соединений за запуск"), el("dd", String(s.ble_peers_peak ?? "Нет данных")));
+    const count = (field) => s[field] === undefined ? "Нет данных" : String(s[field]);
+    const recoveryFacts = [
+      ["Обработка Bluetooth", s.ble_host_age_ms == null ? "Нет данных" : `${uptime(s.ble_host_age_ms)} до снимка · проверок ${count("ble_host_runs")} · ${s.ble_host_queued === undefined ? "состояние очереди неизвестно" : s.ble_host_queued ? "проверка в очереди" : "очередь свободна"}`],
+      ["Обновления объявления Bluetooth", `${count("ble_adv_refreshes")} · ошибок ${count("ble_adv_refresh_failures")}${s.ble_adv_age_ms == null ? "" : ` · последнее ${uptime(s.ble_adv_age_ms)} до снимка`}`],
+      ["Ошибки подключения Bluetooth", `${count("ble_connect_failures")} · последний код ${s.ble_last_connect_status ?? "Нет данных"}`],
+      ["Последняя причина разрыва Bluetooth", s.ble_last_disconnect_reason ?? "Нет данных"],
+      ["Восстановления Bluetooth", `зависаний ${count("ble_host_stalls")} · перезапусков ${count("ble_recovery_restarts")}`],
+    ];
+    if (Object.hasOwn(s, "ble_host_runs")) for (const [name, value] of recoveryFacts) $("controller-diagnostics-summary").append(el("dt", name), el("dd", String(value)));
     $("controller-diagnostics-summary").append(el("dt", "Bluetooth-адрес контроллера"), el("dd", s.ble_address ? s.ble_address.match(/../g).join(":").toUpperCase() : "Нет данных"));
     const legacyStructure = { ble_service_handle: 10, ble_command_handle: 12, ble_challenge_handle: 14, ble_result_handle: 16 };
     const structureReported = Object.keys(legacyStructure).every((field) => Object.hasOwn(s, field));
@@ -762,7 +786,8 @@ export function createAdminApp({ document: doc, apiBase, fetchImpl, credentials 
     $("controller-diagnostics-summary").append(el("dt", "Проверка структуры Bluetooth"), el("dd", !structureReported ? "Нет данных" : structureCompatible ? "Структура Bluetooth совместима" : "Структура Bluetooth отличается от прежней"));
     for (const event of data.events) {
       const row = el("tr");
-      for (const value of [event.occurred_at === undefined ? "Неизвестно" : diagnosticTime(event.occurred_at), diagnosticTime(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], diagnosticCodes[event.code], event.apartment ?? "—", event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
+      const result = `${diagnosticCodes[event.code]}${event.ble_reason === undefined ? "" : ` · код Bluetooth ${event.ble_reason}`}`;
+      for (const value of [event.occurred_at === undefined ? "Неизвестно" : diagnosticTime(event.occurred_at), diagnosticTime(event.received_at), `${event.boot_id} · № ${event.seq}`, uptime(event.uptime_ms), diagnosticStages[event.stage], result, event.apartment ?? "—", event.http_status || "—", event.tls_error || "—", event.wifi_reason || "—"]) row.append(el("td", value));
       $("controller-diagnostics-events").append(row);
     }
     $("controller-diagnostics-empty").hidden = data.events.length !== 0;
